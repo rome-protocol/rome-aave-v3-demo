@@ -1,0 +1,266 @@
+/* ============================================================
+   Rome Aave V3 — dark-mode tokens (extends rome design system)
+   Per spec §4 — dark mode is the default; light mode out of scope.
+   ============================================================ */
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Regular.ttf') format('truetype');
+  font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-Medium.ttf') format('truetype');
+  font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  src: url('/fonts/IBMPlexMono-SemiBold.ttf') format('truetype');
+  font-weight: 600; font-style: normal; font-display: swap;
+}
+
+:root {
+  /* Brand */
+  --rome-purple:        #5E0A60;
+  --rome-purple-hover:  #7a1a7c;
+  --rome-purple-tint:   #9d3aa0;
+  --rome-dark-purple:   #140218;
+  /* Foreground for text/icons ON the (always-dark) Rome Purple — a fixed
+     light value in BOTH themes. var(--fg1) breaks in light mode here
+     (dark ink on dark purple). */
+  --on-rome-purple:     #F4ECF6;
+  --link-hover:         #E0B5E2;   /* link hover on dark canvas (light lavender) */
+  /* Text on the danger-red alert banner. Dark mode's red is bright, so dark
+     text reads (5.96:1); light mode flips this to cream (red is darker there). */
+  --on-danger:          #1a0a0a;
+  /* Text/icon on a hf-safe-green fill. Dark mode's green is bright, so a
+     near-black foreground reads (9.8:1); light flips to cream (green is dark). */
+  --on-safe:            #07140E;
+  --rome-pink:          #F9E3F2;
+  --rome-blue:          #DBEFF7;
+  --rome-lavender:      #D5D3EA;
+
+  /* Dark-mode canvas / surfaces (spec §4) */
+  --bg-canvas:          #140218;
+  --bg-surface:         #1E0823;        /* card on canvas */
+  --bg-surface-2:       #260C2C;        /* nested / hover */
+  --bg-surface-3:       #2F1036;        /* even nestier — code blocks, etc. */
+  --bg-overlay:         rgba(8, 0, 10, 0.72);
+
+  /* Text */
+  --fg1:                #F4ECF6;        /* primary */
+  --fg2:                #A89BAA;        /* secondary / meta */
+  --fg3:                #6E5F73;        /* tertiary / disabled */
+  --fg-inverse:         #140218;
+  --fg-brand:           #C58BC6;        /* brand color tinted up for use as link on dark */
+
+  /* Borders — hairlines (Rome signature) */
+  --border-subtle:      rgba(244, 236, 246, 0.06);
+  --border-default:     rgba(244, 236, 246, 0.12);
+  --border-strong:      rgba(244, 236, 246, 0.24);
+  --border-brand:       rgba(197, 139, 198, 0.40);
+
+  /* Health Factor tiers */
+  --hf-safe:            #5CCFA6;
+  --hf-warn:            #E8A04E;
+  --hf-risk:            #E8A04E;        /* same hue, lower bound; spec says both amber */
+  --hf-danger:          #E26A6A;
+
+  --hf-safe-bg:         rgba(92, 207, 166, 0.12);
+  --hf-warn-bg:         rgba(232, 160, 78, 0.14);
+  --hf-risk-bg:         rgba(232, 160, 78, 0.20);
+  --hf-danger-bg:       rgba(226, 106, 106, 0.16);
+
+  /* Type families — use real Rome fonts (Literata/DM Sans/Plex Sans only
+     specified for the Rome design system which can't upload fonts) */
+  --font-serif: 'Georgia', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
+  --font-sans:  'system-ui', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:  'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Type scale */
+  --text-display: 56px;
+  --text-h1: 40px;
+  --text-h2: 28px;
+  --text-h3: 22px;
+  --text-h4: 18px;
+  --text-body-lg: 17px;
+  --text-body: 14px;
+  --text-small: 13px;
+  --text-xsmall: 12px;
+  --text-eyebrow: 11px;
+
+  /* Spacing */
+  --s-1: 4px; --s-2: 8px; --s-3: 12px; --s-4: 16px; --s-5: 24px;
+  --s-6: 32px; --s-7: 48px; --s-8: 64px; --s-9: 96px;
+
+  /* Radii */
+  --r-xs: 4px; --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-pill: 999px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur-base: 220ms;
+
+  /* Theme-dependent decoration (top-of-page glow) */
+  --glow-1: radial-gradient(80% 50% at 50% -10%, rgba(94, 10, 96, 0.32) 0%, transparent 60%);
+  --glow-2: radial-gradient(50% 40% at 90% 30%, rgba(94, 10, 96, 0.10) 0%, transparent 70%);
+  --header-bg: rgba(20, 2, 24, 0.78);
+
+  /* Logo asset choice — flipped in light mode */
+  --logo-mark: url('/assets/logomark-white.svg');
+  --logo-word: url('/assets/wordmark-white.svg');
+}
+
+/* ============================================================
+   LIGHT MODE — opt-in via html[data-theme="light"]
+   Reuses Rome design system's cream/ink palette.
+   ============================================================ */
+html[data-theme="light"] {
+  --bg-canvas:          #FBF8F4;   /* Rome cream */
+  --bg-surface:         #FFFFFF;
+  --bg-surface-2:       #F4F0EA;   /* Rome paper */
+  --bg-surface-3:       #EDE8DF;   /* Rome stone-50 */
+  --bg-overlay:         rgba(20, 2, 24, 0.40);
+
+  --fg1:                #1A1814;   /* Rome ink */
+  --fg2:                #6E6657;   /* Rome stone-400 */
+  --fg3:                #766E5E;   /* tertiary — darkened for AA on cream (was #B8AE9C = 2.2:1) */
+  --fg-inverse:         #FBF8F4;
+  --fg-brand:           #5E0A60;   /* Rome purple direct in light mode */
+
+  --border-subtle:      rgba(20, 2, 24, 0.06);
+  --border-default:     rgba(20, 2, 24, 0.12);
+  --border-strong:      rgba(20, 2, 24, 0.28);
+  --border-brand:       rgba(94, 10, 96, 0.32);
+
+  /* HF colors — darkened on cream so text + tinted banners clear AA 4.5:1
+     (prior values were 2.9–4.4:1; amber failed outright). Hues preserved. */
+  --hf-safe:            #247052;
+  --hf-warn:            #945310;
+  --hf-risk:            #945310;
+  --hf-danger:          #B53F3F;
+
+  --hf-safe-bg:         rgba(36, 112, 82, 0.10);
+  --hf-warn-bg:         rgba(148, 83, 16, 0.10);
+  --hf-risk-bg:         rgba(148, 83, 16, 0.16);
+  --hf-danger-bg:       rgba(181, 63, 63, 0.10);
+
+  /* Soften the canvas glow — pink wash instead of plum */
+  --glow-1: radial-gradient(80% 60% at 50% -20%, rgba(249, 227, 242, 0.6) 0%, transparent 60%);
+  --glow-2: radial-gradient(60% 50% at 90% 10%, rgba(219, 239, 247, 0.5) 0%, transparent 70%);
+  --header-bg: rgba(251, 248, 244, 0.78);
+
+  --logo-mark: url('/assets/logomark-purple.svg');
+  --logo-word: url('/assets/wordmark-purple.svg');
+  --link-hover:         #7a1a7c;   /* link hover on cream — dark purple stays readable */
+  --on-danger:          #FBF8F4;   /* cream text on the darker light-mode red (4.9:1) */
+  --on-safe:            #FBF8F4;   /* cream on the darker light-mode green (5.6:1) */
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-sans);
+  font-weight: 400;
+  font-size: var(--text-body);
+  line-height: 1.5;
+  color: var(--fg1);
+  background: var(--bg-canvas);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01", "ss02";
+}
+
+/* Subtle plum glow at top of canvas (theme-aware) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: var(--glow-1), var(--glow-2);
+  z-index: 0;
+}
+
+#app { position: relative; z-index: 1; min-height: 100vh; display: flex; flex-direction: column; }
+
+a { color: var(--fg-brand); text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+a:hover { color: var(--link-hover); }
+
+button, input, select, textarea { font-family: inherit; color: inherit; }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+::selection { background: var(--rome-purple); color: var(--on-rome-purple); }
+
+:focus-visible {
+  outline: 2px solid var(--rome-purple-tint);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Common atoms (used everywhere) */
+.eyebrow {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: var(--text-eyebrow);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg2);
+}
+
+.mono { font-family: var(--font-mono); font-feature-settings: "tnum"; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+.hairline { height: 1px; background: var(--border-subtle); width: 100%; }
+
+.serif { font-family: var(--font-serif); }
+
+/* Tables — Rome editorial hairline rules between rows */
+.rome-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-small);
+}
+.rome-table th {
+  font-family: var(--font-mono);
+  font-weight: 400;
+  font-size: var(--text-eyebrow);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--fg2);
+  text-align: left;
+  padding: 12px 12px;
+  border-bottom: 1px solid var(--border-default);
+}
+.rome-table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+.rome-table tbody tr {
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.rome-table tbody tr:hover {
+  background: var(--bg-surface-2);
+  cursor: pointer;
+}
+.rome-table tbody tr:last-child td { border-bottom: none; }
+.rome-table .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-md);
+}
+
+/* Responsive helpers — only meaningful for Markets and Dashboard per spec */
+@media (max-width: 1023px) {
+  .desktop-only { display: none !important; }
+}
+@media (min-width: 768px) {
+  .mobile-only { display: none !important; }
+}
+@media (max-width: 767px) {
+  .tablet-only, .desktop-only { display: none !important; }
+}

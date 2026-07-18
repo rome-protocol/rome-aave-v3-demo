@@ -1,0 +1,20 @@
+Rome Aave v3 demo (aave-demo)
+Copyright 2026 Rome Protocol
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+-------------------------------------------------------------------------------
+Relationship to Aave v3
+-------------------------------------------------------------------------------
+This is a user interface. It interacts with a deployed Aave v3 market via that
+protocol's ABI and calldata; it does NOT contain, fork, or redistribute Aave
+contract source.
+
+Aave v3 (aave/aave-v3-origin) is licensed under the Business Source License 1.1
+(BUSL-1.1). Use of those contracts is governed by that license and its
+Additional Use Grant — not by this repository's Apache-2.0 license.
+
+-------------------------------------------------------------------------------
+Third-party fonts
+-------------------------------------------------------------------------------
+This product bundles IBM Plex Mono, licensed under the SIL Open Font License 1.1.

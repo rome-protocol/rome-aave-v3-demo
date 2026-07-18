@@ -1,0 +1,207 @@
+{
+  "schemaVersion": "1",
+  "chainId": 200010,
+  "chainSlug": "hadrian",
+  "aaveVersion": "v3.6.0",
+  "addressesProvider": "0x72329174d4d8c557C43D1c3eA9EEe74f15598473",
+  "pool": "0x54701445dD60E29152eD7B4d78e4091c7678c58C",
+  "poolConfigurator": "0x8bc4d597153188317f3Ec175f546efdAe497c037",
+  "aclManager": "0xd71B29F17861dE5a67551B494Dbd2eC2438bB87f",
+  "oracle": "0xafb20337173c62241B9Fee64ffCd53f6a9Dd90D5",
+  "poolDataProvider": "0xd06528561115fdaeED8E1b066B589469EB5fE6Fb",
+  "treasury": null,
+  "uiPoolDataProviderV3": "0xc31aC4A9B378c3010fA5af4aD9AA30B1A8f16b94",
+  "rewards": null,
+  "irsConfig": {
+    "optimalUsageRatio": 8000,
+    "baseVariableBorrowRate": 0,
+    "variableRateSlope1": 400,
+    "variableRateSlope2": 7500
+  },
+  "reserves": [
+    {
+      "symbol": "wUSDC",
+      "displaySymbol": "USDC",
+      "underlying": "0xd4cc34b67c805d472b5a709a22a1037f6b16ef28",
+      "aToken": "0x535d02c92de57eBa8324c3B05B10428d0d31cebc",
+      "variableDebtToken": "0x11B4f265C1f860a024A0d828c540dc32740A59FE",
+      "priceFeed": "0x814061F8DF10773fB9c0BD6e276f4bd6EC1C64d9",
+      "priceFeedKind": "mock-aggregator",
+      "decimals": 6,
+      "ltv": 7500,
+      "liquidationThreshold": 8000,
+      "liquidationBonus": 10500
+    },
+    {
+      "symbol": "wETH",
+      "displaySymbol": "ETH",
+      "underlying": "0x8c2c1486cadf7d07312908a065f14af65f56be7e",
+      "aToken": "0xed07bce3aAfb15C9910DCaFe51Ba1Bd454500208",
+      "variableDebtToken": "0xDEFfcB3108367f0996dD247bCaeFbD7C74627E57",
+      "priceFeed": "0x4Cf64AD381741F0FaA30eb26839F092BD1E6d327",
+      "priceFeedKind": "mock-aggregator",
+      "decimals": 8,
+      "ltv": 7000,
+      "liquidationThreshold": 7500,
+      "liquidationBonus": 10500
+    },
+    {
+      "symbol": "wSOL",
+      "displaySymbol": "SOL",
+      "underlying": "0x1dece035621c65a90349b56a801068b439fa4201",
+      "aToken": "0x5d7EB2D9F0040BdeAfCcB4EBE30Cb4bDb9295A86",
+      "variableDebtToken": "0x36e5AF5Ddd2E69C995Cfdbc5Fce1C08758458edb",
+      "priceFeed": "0xF64D81Ae3ea567EA06F284B22C4aA7138b1Cb733",
+      "priceFeedKind": "mock-aggregator",
+      "decimals": 9,
+      "ltv": 6500,
+      "liquidationThreshold": 7000,
+      "liquidationBonus": 10500
+    },
+    {
+      "symbol": "wBTC",
+      "displaySymbol": "BTC",
+      "underlying": "0xd3200df5e6f5e37fdba0275bb63dca1b22506760",
+      "aToken": "0x92e5E395a5087a1c4485dfFc8d38F81457C39B2D",
+      "variableDebtToken": "0x1428D1e144Ce1fea2077A856d14b5505db88e6E2",
+      "priceFeed": "0xAC0990e2Cb10fDB489FB41Ea01C2C6EC0102f8fF",
+      "priceFeedKind": "mock-aggregator",
+      "decimals": 9,
+      "ltv": 7000,
+      "liquidationThreshold": 7500,
+      "liquidationBonus": 10500
+    },
+    {
+      "symbol": "wJitoSOL",
+      "displaySymbol": "JitoSOL",
+      "underlying": "0x1ae3f6327a919c33ebb7590df3d14e3f222f2b04",
+      "aToken": "0x6954570B09Fa9dAaD1700dAfF867467d447474F2",
+      "variableDebtToken": "0xcD586234c70044Bb593A8CDc294e6a4D36880113",
+      "priceFeed": "0xc3f7D71500FA9A5A6A9E9d84E08140939B8c80E5",
+      "priceFeedKind": "mock-aggregator",
+      "decimals": 9,
+      "ltv": 6500,
+      "liquidationThreshold": 7000,
+      "liquidationBonus": 10500
+    },
+    {
+      "symbol": "wmSOL",
+      "displaySymbol": "mSOL",
+      "underlying": "0x872b857058bfb8bf30720b3aa6a0816b76abb271",
+      "aToken": "0x487b6c29cAE66CDf1b77e9c9d51cFAE3cAf23eaE",
+      "variableDebtToken": "0x802a29D69F1526195B686EE0D5E134630ca89A3A",
+      "priceFeed": "0x7d69E1AA9328167D93A42BB5D944c20eAf0bC06b",
+      "priceFeedKind": "mock-aggregator",
+      "decimals": 9,
+      "ltv": 6500,
+      "liquidationThreshold": 7000,
+      "liquidationBonus": 10500
+    },
+    {
+      "symbol": "wJUP",
+      "displaySymbol": "JUP",
+      "underlying": "0x1b3f2b2d67d5ac13bc9c3121eedf15e968e5609a",
+      "aToken": "0x9C5Fe8c56E456DAFf473B90F1D576c2aF53977b9",
+      "variableDebtToken": "0x3f7A7A61a9dc24491032c3fFa6671F25729D1279",
+      "priceFeed": "0x9457110e13Db81394c0023740a780126b853dC5e",
+      "priceFeedKind": "mock-aggregator",
+      "decimals": 9,
+      "ltv": 5500,
+      "liquidationThreshold": 6000,
+      "liquidationBonus": 11000
+    },
+    {
+      "symbol": "wJTO",
+      "displaySymbol": "JTO",
+      "underlying": "0xcca3f9df5e9f60bb7485606260e3816ebcafbf7f",
+      "aToken": "0x692A3AbD916e763a78B66b90384A6f7aD0aF9AAF",
+      "variableDebtToken": "0xe8A76f61beF68170B259d78c016F5d732FF49a38",
+      "priceFeed": "0x91eDFcD35AC32e7a45749fc75DdA527919E96817",
+      "priceFeedKind": "mock-aggregator",
+      "decimals": 9,
+      "ltv": 5500,
+      "liquidationThreshold": 6000,
+      "liquidationBonus": 11000
+    },
+    {
+      "symbol": "wBONK",
+      "displaySymbol": "BONK",
+      "underlying": "0xae4309c91925e1710d725234aa8797631dc3d88a",
+      "aToken": "0xF211f99AAc771370DEa08C5196382C191E5F71AA",
+      "variableDebtToken": "0xbB38D311cE927c07AfDA829903ea740B20d994a7",
+      "priceFeed": "0x7F675c083A2b1803306d87F380b44dc8C60Ed1F8",
+      "priceFeedKind": "mock-aggregator",
+      "decimals": 9,
+      "ltv": 5000,
+      "liquidationThreshold": 5500,
+      "liquidationBonus": 11000
+    }
+  ],
+  "jito": {
+    "enabled": false,
+    "reason": "Hadrian is anchored to Solana devnet; Jito Block Engine is not available there.",
+    "endpoint": null
+  },
+  "ux": {
+    "singleTxFlows": [
+      "supply",
+      "withdraw",
+      "borrow",
+      "repay",
+      "setUserUseReserveAsCollateral",
+      "liquidationCall",
+      "flashLoanSimple"
+    ],
+    "bundleFlows": [],
+    "fallbackFlows": [
+      "sequentialNTx"
+    ]
+  },
+  "demoUrl": "https://aave.testnet.romeprotocol.xyz",
+  "rpcRef": "chains/200010-hadrian/chain.json#rpcUrl",
+  "deployedAt": "2026-05-25T11:36:59Z",
+  "status": "live",
+  "walletBalanceProvider": null,
+  "faucet": {
+    "address": "0xA24CB9b443F46aE205586Cd3dDF0447A9f295019",
+    "gasDropWei": "0",
+    "tokens": [
+      {
+        "symbol": "wBTC",
+        "address": "0xd3200df5e6f5e37fdba0275bb63dca1b22506760",
+        "decimals": 9,
+        "dropAmountWei": "1000000000"
+      },
+      {
+        "symbol": "wJitoSOL",
+        "address": "0x1ae3f6327a919c33ebb7590df3d14e3f222f2b04",
+        "decimals": 9,
+        "dropAmountWei": "1000000000"
+      },
+      {
+        "symbol": "wmSOL",
+        "address": "0x872b857058bfb8bf30720b3aa6a0816b76abb271",
+        "decimals": 9,
+        "dropAmountWei": "1000000000"
+      },
+      {
+        "symbol": "wJUP",
+        "address": "0x1b3f2b2d67d5ac13bc9c3121eedf15e968e5609a",
+        "decimals": 9,
+        "dropAmountWei": "1000000000"
+      },
+      {
+        "symbol": "wJTO",
+        "address": "0xcca3f9df5e9f60bb7485606260e3816ebcafbf7f",
+        "decimals": 9,
+        "dropAmountWei": "1000000000"
+      },
+      {
+        "symbol": "wBONK",
+        "address": "0xae4309c91925e1710d725234aa8797631dc3d88a",
+        "decimals": 9,
+        "dropAmountWei": "1000000000"
+      }
+    ]
+  }
+}

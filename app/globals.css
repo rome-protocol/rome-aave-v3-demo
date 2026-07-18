@@ -1,0 +1,9 @@
+/* Globals — the design ships its own styles.css with @font-face + CSS vars
+   served from /public/styles.css via a <link> tag in layout.tsx. This file
+   stays empty for now; Tailwind is not used (the design uses inline styles
+   + CSS variables exclusively). */
+
+html, body { margin: 0; padding: 0; }
+
+/* Shared spinner keyframe (WalletModal connecting state, etc.). */
+@keyframes spin { to { transform: rotate(360deg); } }

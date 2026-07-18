@@ -1,0 +1,14 @@
+.next/
+node_modules/
+.env
+.env.local
+.DS_Store
+*.log
+.vercel/
+.turbo/
+next-env.d.ts
+tsconfig.tsbuildinfo
+playwright-report/
+playwright/.cache/
+test-results/
+.worktrees/
