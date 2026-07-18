@@ -5,7 +5,7 @@ chain `200010`). This is canonical Aave V3 running on Rome — lend, borrow,
 repay, withdraw, liquidate, and flash-loan, settled Solana-fast.
 
 For how the protocol works + how to deploy the contracts, see
-[`Aave v3/docs/AAVE-V3-ON-ROME.md`](https://github.com/aave/aave-v3-origin/blob/main/docs/AAVE-V3-ON-ROME.md).
+[`Aave v3/docs/AAVE-V3-ON-ROME.md`](https://github.com/rome-protocol/rome-aave-v3/blob/main/docs/AAVE-V3-ON-ROME.md).
 
 ---
 
