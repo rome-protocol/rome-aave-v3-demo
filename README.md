@@ -7,14 +7,14 @@ Demo web app that wraps canonical [Aave V3.6 on Rome](https://github.com/aave/aa
 ## Docs
 
 - **[User guide](docs/USER-GUIDE.md)** — how to use the app (connect, supply/borrow/withdraw/repay, liquidate, flash loan, faucet) + how to deploy the demo app.
-- **[Aave V3 on Rome](https://github.com/aave/aave-v3-origin/blob/main/docs/AAVE-V3-ON-ROME.md)** (contracts repo) — how the protocol works on Rome, contract deploy, oracle (OG-V2), flash-loan pattern, ops tasks.
+- **[Aave V3 on Rome](https://github.com/rome-protocol/rome-aave-v3/blob/main/docs/AAVE-V3-ON-ROME.md)** (contracts repo) — how the protocol works on Rome, contract deploy, oracle (OG-V2), flash-loan pattern, ops tasks.
 
 ## Status — shipped + live
 
 Fully wired: native Next.js 15 pages, registry + live-RPC data, all action
 modals (Supply / Borrow / Repay / Withdraw / liquidationCall / flashLoanSimple
 + multi-asset flashLoan), at-risk feed (`/api/at-risk`), history indexer,
-dual-theme (dark/light), wagmi + the the Rome web app UniWallet stack. Real assets are
+dual-theme (dark/light), wagmi + the Rome web app UniWallet stack. Real assets are
 priced from live Pyth via Oracle Gateway V2.
 
 ## Local dev
@@ -63,15 +63,13 @@ aave-demo/
 
 ## Vocabulary rule
 
-The display layer never says `wUSDC` / `wETH` / `cached` / `wrapper` / `SPL`. Tokens are surfaced by their underlying asset name (USDC, ETH, SOL) with the canonical logo. Solana backing is disclosed in exactly one place — the asset detail page's "About" disclosure. See [the docs PR #137](the design spec) §3 for the full rule.
+The display layer never says `wUSDC` / `wETH` / `cached` / `wrapper` / `SPL`. Tokens are surfaced by their underlying asset name (USDC, ETH, SOL) with the canonical logo. Solana backing is disclosed in exactly one place — the asset detail page's "About" disclosure.
 
 ## Parameterization rule
 
 Every value visible in mockups is illustrative. Implementation reads:
 - **Registry-fed at boot**: chain config, contract addresses (Pool / PoolConfigurator / Oracle / etc.), token display info from `apps/aave/<chainId>-<slug>.json` + `chains/<chainId>-<slug>/{chain,tokens}.json`
 - **RPC at request time**: reserve data (APYs / utilization / total supply / borrow) via `UiPoolDataProviderV3.getReservesData`; user data via `getUserReservesData(user)`; per-asset price via `AaveOracle.getAssetPrice`
-
-See [the docs PR #137](the design spec) §6 for the full source map.
 
 ## License
 
