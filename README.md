@@ -1,8 +1,17 @@
 # Rome Aave V3 — Demo UI
 
+> **Built on [Rome Protocol](https://docs.rome.builders)** — EVM chains that run natively inside the Solana runtime, where Solidity apps call Solana programs atomically (CPI) and Solana users drive EVM apps: two VMs, one chain, one block.
+
 Demo web app that wraps canonical [Aave V3.6 on Rome](https://github.com/aave/aave-v3-origin) with the Rome product-suite chrome. Reads chain config + contract addresses from [`@rome-protocol/registry`](https://github.com/rome-protocol/rome-registry) (`apps/aave/<chainId>-<slug>.json`) at boot and per-reserve / per-user data from live RPC at request time.
 
 **Live:** `aave.testnet.romeprotocol.xyz` (Hadrian, chain 200010).
+
+**Why this works on Rome:**
+- **Standard EVM tooling** — canonical Aave V3.6 deploys with plain Solidity / Hardhat / Foundry, unmodified, and gains Solana execution.
+- **Atomic CPI access** — Aave flows can atomically reach Solana liquidity through Rome's CPI layer.
+- **App Sovereignty** — Aave runs on its **own isolated Rome EVM chain** with a custom gas token and its own fee revenue.
+
+The companion contracts fork lives in [`rome-aave-v3`](https://github.com/rome-protocol/rome-aave-v3) (Aave V3 is BUSL — upstream [`aave/aave-v3-origin`](https://github.com/aave/aave-v3-origin)). For how EVM execution and CPI work on Solana, see the **[Rome Protocol documentation](https://docs.rome.builders)**.
 
 ## Docs
 
