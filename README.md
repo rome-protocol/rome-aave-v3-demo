@@ -83,3 +83,6 @@ Every value visible in mockups is illustrative. Implementation reads:
 ## License
 
 Licensed under Apache-2.0 — see LICENSE and NOTICE.
+
+## Building on Rome with an agent
+See [`AGENTS.md`](./AGENTS.md) — the Rome-specific rules a coding agent needs.
