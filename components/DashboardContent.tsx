@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useActiveAddress } from "@/hooks/useActiveLane";
 import { useUniWallet } from "@/hooks/useUniWallet";
 import {
   Button,
@@ -20,12 +20,15 @@ import {
   Banner,
   CollateralToggle,
   hfTierStyle,
+  NetworkLabel,
 } from "@/components/primitives";
 import { PageHeader, PageFooter } from "@/components/PageHeader";
 import { fallbackChainInfo } from "@/lib/registry-config";
 import { IconAlert, IconCopy, IconSpark } from "@/components/icons";
+import { Tip } from "@/components/Tip";
 import { useAaveConfig, useUserData } from "@/hooks/useAaveData";
-import { fmt, computeUserAggregates } from "@/lib/format";
+import { fmt, fmtAmount, fmtUsd, computeUserAggregates } from "@/lib/format";
+import { useAaveCollateral } from "@/hooks/useAaveCollateral";
 import { ActionModal, type ActionIntent } from "@/components/ActionModal";
 import { EmodeModal } from "@/components/EmodeModal";
 import type {
@@ -51,9 +54,9 @@ const fallbackChainStub: ChainInfo = fallbackChainInfo;
 export function DashboardContent() {
   const cfg = useAaveConfig();
   const usr = useUserData();
-  const { isConnected, address } = useAccount();
+  const { isConnected, address } = useActiveAddress();
   const wallet = useUniWallet();
-  const openConnectModal = () => wallet.openFilteredWalletModal("evm");
+  const openConnectModal = () => wallet.openFilteredWalletModal("all");
   const router = useRouter();
   const [actionIntent, setActionIntent] = useState<ActionIntent | null>(null);
   const [emodeOpen, setEmodeOpen] = useState(false);
@@ -61,7 +64,7 @@ export function DashboardContent() {
   if (cfg.isLoading) {
     return (
       <ShellWithPlaceholder>
-        <div style={{ color: "var(--fg2)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Loading reserves…</div>
+        <div style={{ color: "var(--fg2)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Loading…</div>
       </ShellWithPlaceholder>
     );
   }
@@ -69,7 +72,7 @@ export function DashboardContent() {
     return (
       <ShellWithPlaceholder>
         <Banner variant="danger" icon={<IconAlert size={16} />}>
-          Couldn&rsquo;t reach the chain RPC. Reserve data is unavailable.
+          Can&rsquo;t load market data.
         </Banner>
       </ShellWithPlaceholder>
     );
@@ -95,13 +98,14 @@ export function DashboardContent() {
         reservesBySymbol={reservesBySymbol}
         user={usr.data}
         isConnected={isConnected}
-        connectAddress={address}
+        connectAddress={address ?? undefined}
         onConnect={openConnectModal}
         onNavigate={(path) => router.push(path)}
         onOpenAction={setActionIntent}
         emodeCategories={emodeCategories}
         activeEmodeLabel={activeEmodeLabel}
         onOpenEmode={() => setEmodeOpen(true)}
+        pool={aaveAddresses.pool as `0x${string}`}
       />
       <ActionModal
         open={!!actionIntent}
@@ -109,6 +113,7 @@ export function DashboardContent() {
         reserve={modalReserve}
         position={modalPosition}
         aggregate={usr.data?.aggregate}
+        positions={usr.data?.positions}
         pool={aaveAddresses.pool as `0x${string}`}
         availableBorrowsUsd={usr.data?.aggregate.availableBorrowsUsd ?? 0}
         onClose={() => setActionIntent(null)}
@@ -149,6 +154,7 @@ interface DashboardBodyProps {
   emodeCategories: EmodeCategoryConfig[];
   activeEmodeLabel: string;
   onOpenEmode: () => void;
+  pool: `0x${string}`;
 }
 
 const DashboardBody = ({
@@ -163,7 +169,9 @@ const DashboardBody = ({
   emodeCategories,
   activeEmodeLabel,
   onOpenEmode,
+  pool,
 }: DashboardBodyProps) => {
+  const collateral = useAaveCollateral(pool);
   if (!isConnected) {
     return (
       <Container max={1320} style={{ paddingTop: 20 }}>
@@ -190,19 +198,22 @@ const DashboardBody = ({
         <PageHero eyebrow="Dashboard" title="Your positions" />
         <div className="card" style={{ marginTop: 24, padding: "48px 32px", textAlign: "center" }}>
           <div style={{ fontFamily: "var(--font-serif)", fontSize: 28, color: "var(--fg1)", letterSpacing: "-0.01em" }}>
-            <i>$0</i> · 0% · No active loans.
+            <i>$0</i> · 0% · No positions.
           </div>
           <div style={{ color: "var(--fg2)", marginTop: 12, marginBottom: 24 }}>
-            Browse the markets to start lending or borrowing.
+            Supply or borrow to start.
           </div>
-          <Button variant="primary" size="lg" onClick={() => onNavigate("/")}>Go to Markets</Button>
+          <Button variant="primary" size="lg" onClick={() => onNavigate("/")}>Open markets</Button>
         </div>
       </Container>
     );
   }
 
   const tier = hfTierStyle(agg.hf);
-  const firstDebtSymbol = Object.entries(positions).find(([, p]) => p.debtBalance > 0)?.[0];
+  const largestDebtSymbol = Object.entries(positions)
+    .filter(([, p]) => p.debtBalance > 0)
+    .sort(([a, pa], [b, pb]) =>
+      pb.debtBalance * (reservesBySymbol[b]?.priceUsd ?? 0) - pa.debtBalance * (reservesBySymbol[a]?.priceUsd ?? 0))[0]?.[0];
 
   return (
     <Container max={1320} style={{ paddingTop: 20, paddingBottom: 40, display: "flex", flexDirection: "column", gap: 22 }}>
@@ -211,7 +222,7 @@ const DashboardBody = ({
         address={user?.address ?? connectAddress ?? ""}
         agg={agg}
         tier={tier}
-        onReduceRisk={firstDebtSymbol ? () => onOpenAction({ mode: "repay", symbol: firstDebtSymbol }) : undefined}
+        onReduceRisk={largestDebtSymbol ? () => onOpenAction({ mode: "repay", symbol: largestDebtSymbol }) : undefined}
       />
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }} className="positions-grid">
@@ -223,6 +234,7 @@ const DashboardBody = ({
           agg={agg}
           onNavigate={onNavigate}
           onOpenAction={onOpenAction}
+          collateral={collateral}
         />
         <PositionsColumn
           title="Your borrows"
@@ -232,6 +244,7 @@ const DashboardBody = ({
           agg={agg}
           onNavigate={onNavigate}
           onOpenAction={onOpenAction}
+          collateral={collateral}
         />
       </div>
 
@@ -290,20 +303,22 @@ const DashboardHero = ({
   onReduceRisk: (() => void) | undefined;
 }) => (
   <div>
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
-      <span style={{ width: 22, height: 22, borderRadius: 22, background: "linear-gradient(135deg, #5E0A60 0%, #9d3aa0 50%, #C58BC6 100%)" }} />
-      <span className="mono" style={{ fontSize: 12, color: "var(--fg1)", letterSpacing: "0.02em" }}>
+    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 10, rowGap: 8, marginBottom: 14 }}>
+      <span style={{ width: 22, height: 22, flexShrink: 0, borderRadius: 22, background: "linear-gradient(135deg, var(--btn-1) 0%, var(--btn-2) 55%, var(--btn-3) 100%)" }} />
+      <span className="mono" style={{ fontSize: 12, color: "var(--fg1)", letterSpacing: "0.02em", flexShrink: 0, whiteSpace: "nowrap" }}>
         {fmt.addr(address, 10, 8)}
       </span>
-      <button
-        type="button"
-        title="Copy address"
-        onClick={() => { void navigator.clipboard?.writeText(address); }}
-        style={{ background: "transparent", border: "1px solid var(--border-default)", color: "var(--fg2)", padding: 6, borderRadius: 6, display: "inline-flex" }}
-      >
-        <IconCopy size={11} />
-      </button>
-      <Tag tone="brand">{chain.displayName}</Tag>
+      <Tip text="Copy address">
+        <button
+          type="button"
+          aria-label="Copy address"
+          onClick={() => { void navigator.clipboard?.writeText(address); }}
+          style={{ background: "transparent", border: "1px solid var(--border-default)", color: "var(--fg2)", padding: 6, borderRadius: 6, display: "inline-flex" }}
+        >
+          <IconCopy size={11} />
+        </button>
+      </Tip>
+      <NetworkLabel />
     </div>
 
     <div className="dashboard-hero" style={{
@@ -317,12 +332,12 @@ const DashboardHero = ({
     }}>
       <div style={{ background: "var(--bg-surface)", padding: "24px 28px" }}>
         <Eyebrow>Net worth</Eyebrow>
-        <div style={heroNumStyle()}>{fmt.usd(agg.netWorth)}</div>
-        <div style={heroSubStyle}>Supplied {fmt.usd(agg.suppliedUsd, { compact: true })} · Debt {fmt.usd(agg.debtUsd, { compact: true })}</div>
+        <div className="headline-num" style={heroNumStyle()}>{fmtUsd(agg.netWorth)}</div>
+        <div style={heroSubStyle}>Supplied {fmtUsd(agg.suppliedUsd)} · Debt {fmtUsd(agg.debtUsd)}</div>
       </div>
       <div style={{ background: "var(--bg-surface)", padding: "24px 28px" }}>
         <Eyebrow>Net APY</Eyebrow>
-        <div style={heroNumStyle(agg.netApy > 0 ? "var(--hf-safe)" : "var(--hf-danger)")}>
+        <div className="headline-num" style={heroNumStyle(agg.netApy > 0 ? "var(--hf-safe)" : "var(--hf-danger)")}>
           {agg.netApy > 0 ? "+" : ""}{fmt.pct(agg.netApy)}
         </div>
         <div style={heroSubStyle}>Earn {fmt.pct(agg.netSupplyApy)} · Pay {fmt.pct(agg.netBorrowApy)}</div>
@@ -330,7 +345,7 @@ const DashboardHero = ({
       <div style={{ background: "var(--bg-surface)", padding: "24px 28px", position: "relative" }}>
         <Eyebrow>Health Factor</Eyebrow>
         <div style={{ marginTop: 8, display: "flex", alignItems: "baseline", gap: 14 }}>
-          <div style={heroNumStyle(tier?.color ?? "var(--fg1)", false)}>{fmt.hf(agg.hf)}</div>
+          <div className="headline-num" style={heroNumStyle(tier?.color ?? "var(--fg1)", false)}>{fmt.hf(agg.hf)}</div>
           {tier ? <Tag tone={tier.key === "safe" ? "success" : tier.key === "danger" ? "danger" : "warn"}>{tier.label}</Tag> : null}
         </div>
         <HFGauge hf={agg.hf} />
@@ -346,9 +361,7 @@ const DashboardHero = ({
 
 const heroNumStyle = (color: string = "var(--fg1)", withMargin = true): React.CSSProperties => ({
   marginTop: withMargin ? 8 : 0,
-  fontFamily: "var(--font-serif)",
   fontSize: 44,
-  letterSpacing: "-0.02em",
   color,
   lineHeight: 1.0,
   fontFeatureSettings: "'tnum'",
@@ -400,6 +413,7 @@ const PositionsColumn = ({
   reservesBySymbol,
   agg,
   onNavigate,
+  collateral,
   onOpenAction,
 }: {
   title: string;
@@ -408,20 +422,20 @@ const PositionsColumn = ({
   reservesBySymbol: Record<string, Reserve>;
   agg: ComputedAggregates;
   onNavigate: (path: string) => void;
+  collateral: ReturnType<typeof useAaveCollateral>;
   onOpenAction: (intent: ActionIntent) => void;
 }) => {
   const isSupply = kind === "supply";
   const rows = Object.entries(positions).filter(([, p]) =>
     isSupply ? p.suppliedBalance > 0 : p.debtBalance > 0,
   );
-  const firstSymbol = rows[0]?.[0] || "USDC";
 
   return (
     <div className="card" style={{ padding: 20 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
         <h3 style={{ margin: 0, fontFamily: "var(--font-serif)", fontWeight: 400, fontSize: 20, letterSpacing: "-0.005em" }}>{title}</h3>
         <span className="mono tabular" style={{ fontSize: 18, color: "var(--fg1)", fontFamily: "var(--font-mono)" }}>
-          {fmt.usd(isSupply ? agg.suppliedUsd : agg.debtUsd, { compact: true })}
+          {fmtUsd(isSupply ? agg.suppliedUsd : agg.debtUsd)}
         </span>
       </div>
       <div style={{
@@ -439,7 +453,7 @@ const PositionsColumn = ({
         <span>
           {isSupply ? "Collateral" : "Borrow power used"}{" "}
           <span className="tabular" style={{ color: "var(--fg1)" }}>
-            {isSupply ? fmt.usd(agg.collateralUsd, { compact: true }) : fmt.pct(agg.ltvPct, 0)}
+            {isSupply ? fmtUsd(agg.collateralUsd) : fmt.pct(agg.ltvPct, 0)}
           </span>
         </span>
       </div>
@@ -448,7 +462,8 @@ const PositionsColumn = ({
 
       {rows.length === 0 ? (
         <div style={{ padding: "32px 0", textAlign: "center", color: "var(--fg2)", fontSize: 13 }}>
-          No {isSupply ? "supplies" : "borrows"} yet.
+          No {isSupply ? "supplies" : "borrows"}.{" "}
+          <a href="/" onClick={(e) => { e.preventDefault(); onNavigate("/"); }} style={{ color: "var(--fg-brand)" }}>Open markets</a>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column" }}>
@@ -474,10 +489,10 @@ const PositionsColumn = ({
                 <AssetSymbol symbol={sym} size={24} showName name={r.name} />
                 <div style={{ textAlign: "right" }}>
                   <div className="mono tabular" style={{ color: "var(--fg1)" }}>
-                    {fmt.num(bal, isSupply && bal > 100 ? 2 : 4)}
+                    {fmtAmount(bal)}
                   </div>
                   <div style={{ color: "var(--fg2)", fontSize: 11 }}>
-                    {fmt.usd(bal * r.priceUsd, { compact: true })}
+                    {fmtUsd(bal * r.priceUsd)}
                   </div>
                 </div>
                 <div style={{ textAlign: "right", minWidth: 60 }}>
@@ -487,12 +502,34 @@ const PositionsColumn = ({
                   {isSupply ? (
                     <CollateralToggle
                       on={p.isCollateral}
-                      disabled={!r.canBeCollateral}
-                      onClick={(e) => e.stopPropagation()}
+                      disabled={!r.canBeCollateral || collateral.pending !== null}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void collateral.setCollateral(sym, r.contract, !p.isCollateral);
+                      }}
                     />
                   ) : (
                     <Tag>Variable</Tag>
                   )}
+                </div>
+                <div
+                  style={{ gridColumn: "1 / -1", display: "flex", gap: 8 }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {(isSupply
+                    ? [["supply", "Supply more", "primary"], ["withdraw", "Withdraw", "secondary"]]
+                    : [["borrow", "Borrow more", "secondary"], ["repay", "Repay", "primary"]] as const
+                  ).map(([mode, label, variant]) => (
+                    <Button
+                      key={mode}
+                      variant={variant as "primary" | "secondary"}
+                      size="sm"
+                      fullWidth
+                      onClick={() => onOpenAction({ mode: mode as ActionIntent["mode"], symbol: sym })}
+                    >
+                      {label}
+                    </Button>
+                  ))}
                 </div>
               </div>
             );
@@ -500,27 +537,9 @@ const PositionsColumn = ({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
-        {isSupply ? (
-          <>
-            <Button variant="primary" size="sm" fullWidth onClick={() => onOpenAction({ mode: "supply", symbol: firstSymbol })}>
-              Supply more
-            </Button>
-            <Button variant="secondary" size="sm" fullWidth onClick={() => onOpenAction({ mode: "withdraw", symbol: firstSymbol })}>
-              Withdraw
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button variant="secondary" size="sm" fullWidth onClick={() => onOpenAction({ mode: "borrow", symbol: firstSymbol })}>
-              Borrow more
-            </Button>
-            <Button variant="primary" size="sm" fullWidth onClick={() => onOpenAction({ mode: "repay", symbol: firstSymbol })}>
-              Repay
-            </Button>
-          </>
-        )}
-      </div>
+      {isSupply && collateral.error ? (
+        <div style={{ color: "var(--hf-danger)", fontSize: 12, marginTop: 12 }}>{collateral.error}</div>
+      ) : null}
     </div>
   );
 };
@@ -542,7 +561,7 @@ const EmodeCard = ({
   <div className="card" style={{ padding: 20, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
     <div style={{
       width: 44, height: 44, borderRadius: 44,
-      background: "rgba(197, 139, 198, 0.10)",
+      background: "color-mix(in srgb, var(--bridge) 12%, transparent)",
       border: "1px solid var(--border-brand)",
       display: "flex", alignItems: "center", justifyContent: "center",
       color: "var(--fg-brand)",
@@ -556,8 +575,8 @@ const EmodeCard = ({
       </div>
       <div style={{ color: "var(--fg2)", fontSize: 13, marginTop: 4 }}>
         {categories.length === 0
-          ? "No e-mode categories configured on this market."
-          : "Boost borrow power for correlated assets by joining an efficiency category."}
+          ? "No e-mode categories."
+          : "Higher borrow power for correlated assets."}
       </div>
     </div>
     {categories.length > 0 ? (

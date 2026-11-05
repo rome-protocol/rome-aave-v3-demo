@@ -1,7 +1,7 @@
 // Minimal RomeChain shape lifted from the Rome web app — single-chain (Hadrian)
 // version for the Aave V3 demo. Wide-multi-chain machinery is intentionally
 // not ported because the demo only ever talks to one chain. If we add
-// chains here, this file must mirror the the Rome web app shape so the lifted
+// chains here, this file must mirror the Rome web app shape so the lifted
 // walletStore + evmChainSwitch keep working without changes.
 
 import hadrianChainJson from "@/lib/hadrian-chain.json";

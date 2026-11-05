@@ -7,22 +7,23 @@
 // implements IFlashLoanSimpleReceiver correctly.
 //
 // The receiver address comes from the user-facing input; we don't ship
-// a bundled receiver because the smoke receiver in Aave v3 needs
+// a bundled receiver because the smoke receiver in rome-aave-v3 needs
 // caller-side pre-funding of the premium and so can't double as a
 // permanent on-chain fixture.
 
 import { useCallback, useMemo, useState } from "react";
 import {
-  useAccount,
   usePublicClient,
-  useWriteContract,
 } from "wagmi";
+import { useActiveAddress } from "@/hooks/useActiveLane";
+import { useSendAaveCall } from "@/hooks/useSendAaveCall";
 import { isAddress, isHex, parseUnits } from "viem";
 import { useQueryClient } from "@tanstack/react-query";
 import { PoolAbi } from "@/lib/abi";
 import { hadrian } from "@/lib/wagmi";
 import { decodeAaveError } from "@/lib/decode-aave-error";
-import { waitForReceiptWithTimeout } from "@/lib/wait-for-receipt";
+import { confirmTx } from "@/lib/wait-for-receipt";
+import { markFresh } from "@/lib/fresh";
 
 export type FlashLoanPhase = "editing" | "executing" | "success" | "error";
 
@@ -52,9 +53,9 @@ export function useAaveFlashLoan({
   receiver,
   paramsHex,
 }: UseAaveFlashLoanInput): UseAaveFlashLoanResult {
-  const { address: user } = useAccount();
+  const { address: user } = useActiveAddress();
+  const { sendCall, ensureWrapperGrant, wasRelayed } = useSendAaveCall();
   const publicClient = usePublicClient({ chainId: hadrian.id });
-  const { writeContractAsync } = useWriteContract();
   const queryClient = useQueryClient();
 
   const [phase, setPhase] = useState<FlashLoanPhase>("editing");
@@ -72,6 +73,8 @@ export function useAaveFlashLoan({
   }, [amount, decimals]);
 
   const submit = useCallback(async () => {
+    // A new attempt starts clean: a link from an earlier attempt must not show in this one's error phase.
+    setExecuteHash(null);
     if (!user || !asset || !pool || !publicClient) {
       setError("Wallet or chain not ready");
       setPhase("error");
@@ -104,36 +107,24 @@ export function useAaveFlashLoan({
         params as `0x${string}`,
         0,
       ] as const;
-      const est = await publicClient.estimateContractGas({
-        account: user,
-        address: pool,
-        abi: PoolAbi,
-        functionName: "flashLoanSimple",
-        args,
-      });
-      const gas = (est * 13_000n) / 10_000n;
-      const xHash = await writeContractAsync({
-        address: pool,
-        abi: PoolAbi,
-        functionName: "flashLoanSimple",
-        args,
-        chainId: hadrian.id,
-        gas,
-      });
+      const xHash = await sendCall({ address: pool, abi: PoolAbi, functionName: "flashLoanSimple", args });
       setExecuteHash(xHash);
-      await waitForReceiptWithTimeout(publicClient, xHash);
+      await confirmTx(publicClient, xHash, wasRelayed(xHash));
 
       setPhase("success");
 
       // Refresh history + market totals so the event lands on /history
       // and supply/borrow numbers reflect the round-trip.
+      markFresh();
       void queryClient.invalidateQueries({ queryKey: ["history"] });
       void queryClient.invalidateQueries({ queryKey: ["aave-config"] });
     } catch (e: unknown) {
       setError(decodeAaveError(e));
       setPhase("error");
     }
-  }, [user, asset, pool, publicClient, amountRaw, receiver, paramsHex, writeContractAsync, queryClient]);
+  }, [user, asset, pool, publicClient, amountRaw, receiver, paramsHex, sendCall,
+    ensureWrapperGrant,
+    wasRelayed, queryClient]);
 
   const reset = useCallback(() => {
     setPhase("editing");

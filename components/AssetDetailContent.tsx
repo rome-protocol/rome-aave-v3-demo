@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useAccount } from "wagmi";
+import { useActiveAddress } from "@/hooks/useActiveLane";
 import { useUniWallet } from "@/hooks/useUniWallet";
 import {
   AddressRow,
@@ -18,12 +18,15 @@ import {
   SectionTitle,
   Tag,
 } from "@/components/primitives";
-import { AssetSymbol } from "@/components/primitives";
+import { TokenIcon } from "@/components/TokenIcon";
+import { useAssetIdentity } from "@/hooks/useAssetIdentity";
 import { PageHeader, PageFooter } from "@/components/PageHeader";
 import { fallbackChainInfo } from "@/lib/registry-config";
 import { IconChevronLeft, IconExternal, IconWallet, IconAlert } from "@/components/icons";
 import { useAaveConfig, useUserData } from "@/hooks/useAaveData";
-import { fmt } from "@/lib/format";
+import { addressHref } from "@/lib/explorer-links";
+import { fmt, fmtAmount, fmtPrice, fmtShare, fmtUsd } from "@/lib/format";
+import { IR, irLayout } from "@/lib/ir-labels";
 import { ActionModal, type ActionIntent } from "@/components/ActionModal";
 import type { ChainInfo, Reserve, UserPosition } from "@/lib/types";
 
@@ -41,16 +44,16 @@ const fallbackChainStub: ChainInfo = fallbackChainInfo;
 export function AssetDetailContent({ symbol }: { symbol: string }) {
   const cfg = useAaveConfig();
   const usr = useUserData();
-  const { isConnected } = useAccount();
+  const { isConnected } = useActiveAddress();
   const wallet = useUniWallet();
-  const openConnectModal = () => wallet.openFilteredWalletModal("evm");
+  const openConnectModal = () => wallet.openFilteredWalletModal("all");
   const router = useRouter();
   const [actionIntent, setActionIntent] = useState<ActionIntent | null>(null);
 
   if (cfg.isLoading) {
     return (
       <ShellWithPlaceholder>
-        <div style={{ color: "var(--fg2)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Loading reserve…</div>
+        <div style={{ color: "var(--fg2)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Loading…</div>
       </ShellWithPlaceholder>
     );
   }
@@ -58,7 +61,7 @@ export function AssetDetailContent({ symbol }: { symbol: string }) {
     return (
       <ShellWithPlaceholder>
         <Banner variant="danger" icon={<IconAlert size={16} />}>
-          Couldn&rsquo;t reach the chain RPC. Reserve data is unavailable.
+          Can&rsquo;t load market data.
         </Banner>
       </ShellWithPlaceholder>
     );
@@ -74,7 +77,7 @@ export function AssetDetailContent({ symbol }: { symbol: string }) {
         <PageHeader chain={chain} hf={hf} />
         <Container max={1280} style={{ paddingTop: 20 }}>
           <Banner variant="warn">
-            Reserve <code>{symbol}</code> not found on {chain.displayName}.
+            No market for <code>{symbol}</code>.
           </Banner>
           <div style={{ marginTop: 16 }}>
             <Button variant="secondary" onClick={() => router.push("/")}>← Back to markets</Button>
@@ -107,6 +110,7 @@ export function AssetDetailContent({ symbol }: { symbol: string }) {
         reserve={reserve}
         position={userPosition}
         aggregate={usr.data?.aggregate}
+        positions={isConnected ? usr.data?.positions : undefined}
         pool={aaveAddresses.pool as `0x${string}`}
         availableBorrowsUsd={availableBorrowsUsd}
         onClose={() => setActionIntent(null)}
@@ -150,6 +154,7 @@ const AssetDetailBody = ({
   const [aboutOpen, setAboutOpen] = useState(false);
   const utilization = reserve.totalSupply > 0 ? reserve.totalBorrow / reserve.totalSupply : 0;
   const symbol = reserve.symbol;
+  const id = useAssetIdentity(symbol, reserve.name);
 
   return (
     <Container max={1280} style={{ paddingTop: 32, paddingBottom: 40 }}>
@@ -163,10 +168,10 @@ const AssetDetailBody = ({
 
       {/* Asset header */}
       <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 28, flexWrap: "wrap" }}>
-        <AssetSymbol symbol={symbol} size={48} />
+        <TokenIcon symbol={id.symbol} mint={id.mint} size={48} />
         <div>
           <h1 style={{ margin: 0, fontFamily: "var(--font-serif)", fontWeight: 400, fontSize: 38, letterSpacing: "-0.02em" }}>
-            {symbol} <span style={{ color: "var(--fg2)" }}>— {reserve.name}</span>
+            {id.symbol}{id.name ? <span style={{ color: "var(--fg2)" }}> — {id.name}</span> : null}
           </h1>
           <div style={{ marginTop: 6, color: "var(--fg2)", fontSize: 13 }}>
             Backed 1:1 by <i>{symbol}</i> on Solana.
@@ -195,7 +200,7 @@ const AssetDetailBody = ({
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
           <Eyebrow>Oracle price</Eyebrow>
           <div className="mono tabular" style={{ fontSize: 22, color: "var(--fg1)", fontFamily: "var(--font-mono)" }}>
-            {fmt.usd(reserve.priceUsd, { dp: reserve.priceUsd > 100 ? 2 : 4 })}
+            {fmtPrice(reserve.priceUsd)}
           </div>
         </div>
       </div>
@@ -212,19 +217,17 @@ const AssetDetailBody = ({
           lineHeight: 1.6,
         }}>
           <p style={{ margin: 0 }}>
-            <b>{symbol}</b> on Rome is backed 1:1 by <i>{symbol}</i> on Solana
+            <b>{symbol}</b> is backed 1:1 by <i>{symbol}</i> on Solana
             {reserve.solanaMint ? (
               <>
                 {" "}(mint <code className="mono" style={{ color: "var(--fg-brand)" }}>{reserve.solanaMint}</code>)
               </>
             ) : null}
-            . Bridge {symbol} in or out via{" "}
+            . Bridge in or out via{" "}
             <a href={chain.bridgeUrl || "#"} target="_blank" rel="noreferrer" style={{ color: "var(--fg-brand)" }}>
-              bridge.{chain.slug}.romeprotocol.xyz ↗
+              {chain.bridgeUrl ? new URL(chain.bridgeUrl).host : "Bridge"} ↗
             </a>
-            . The on-chain contract symbol is{" "}
-            <code className="mono" style={{ color: "var(--fg2)" }}>w{symbol}</code>; this UI displays the underlying
-            asset name.
+            .
           </p>
         </div>
       ) : null}
@@ -237,25 +240,25 @@ const AssetDetailBody = ({
         marginBottom: 24,
       }}>
         <div className="card" style={{ padding: 18 }}>
-          <Eyebrow>Total supplied</Eyebrow>
-          <div className="mono tabular" style={{ fontSize: 26, marginTop: 6, color: "var(--fg1)" }}>
-            {fmt.usd(reserve.totalSupplyUsd, { compact: true })}
+          <Eyebrow>Supplied</Eyebrow>
+          <div className="headline-num tabular" style={{ fontSize: 26, marginTop: 6, color: "var(--fg1)" }}>
+            {fmtUsd(reserve.totalSupplyUsd)}
           </div>
           <CapBarFull label="Cap" used={reserve.totalSupply} total={reserve.supplyCap} />
         </div>
         <div className="card" style={{ padding: 18 }}>
-          <Eyebrow>Total borrowed</Eyebrow>
-          <div className="mono tabular" style={{ fontSize: 26, marginTop: 6, color: "var(--fg1)" }}>
-            {fmt.usd(reserve.totalBorrowUsd, { compact: true })}
+          <Eyebrow>Borrowed</Eyebrow>
+          <div className="headline-num tabular" style={{ fontSize: 26, marginTop: 6, color: "var(--fg1)" }}>
+            {fmtUsd(reserve.totalBorrowUsd)}
           </div>
           <CapBarFull label="Cap" used={reserve.totalBorrow} total={reserve.borrowCap} />
         </div>
         <div className="card" style={{ padding: 18 }}>
           <Eyebrow>Utilization</Eyebrow>
-          <div className="mono tabular" style={{ fontSize: 26, marginTop: 6, color: "var(--fg1)" }}>
-            {fmt.pct(utilization, 1)}
+          <div className="headline-num tabular" style={{ fontSize: 26, marginTop: 6, color: "var(--fg1)" }}>
+            {fmtShare(utilization * 100)}
           </div>
-          <CapBarFull label="of optimal" used={utilization} total={reserve.optimalUsageRatio} colorOk="var(--fg-brand)" colorWarn="var(--hf-warn)" />
+          <CapBarFull label="of optimal" used={utilization} total={reserve.optimalUsageRatio} format={(n) => fmt.pct(n, 0)} colorOk="var(--fg-brand)" colorWarn="var(--hf-warn)" />
         </div>
       </div>
 
@@ -276,7 +279,7 @@ const AssetDetailBody = ({
       <div style={{ marginTop: 28 }}>
         <SectionTitle right={<Tag>Variable</Tag>}>Interest rate model</SectionTitle>
         <div className="card" style={{ padding: 20 }}>
-          <IRCurveChart reserve={reserve} />
+          <div style={{ overflowX: "auto" }}><IRCurveChart reserve={reserve} /></div>
         </div>
       </div>
 
@@ -284,14 +287,14 @@ const AssetDetailBody = ({
       <div style={{ marginTop: 28 }}>
         <SectionTitle>Token addresses</SectionTitle>
         <div className="card" style={{ padding: "4px 20px" }}>
-          <AddressRow label="Token contract" address={reserve.contract} explorerHref={explorerHref(chain, reserve.contract)} />
+          <AddressRow label="Token" address={reserve.contract} explorerHref={explorerHref(chain, reserve.contract)} />
           <AddressRow label="aToken" address={reserve.aToken} explorerHref={explorerHref(chain, reserve.aToken)} />
-          <AddressRow label="Variable debt token" address={reserve.varDebt} explorerHref={explorerHref(chain, reserve.varDebt)} />
+          <AddressRow label="Debt token" address={reserve.varDebt} explorerHref={explorerHref(chain, reserve.varDebt)} />
           {reserve.solanaMint ? (
             <AddressRow
-              label="Solana backing (mint)"
+              label="Solana mint"
               address={reserve.solanaMint}
-              explorerLabel="Solscan"
+              explorerLabel="Solana Explorer"
               explorerHref={solanaExplorerHref(chain, reserve.solanaMint)}
             />
           ) : null}
@@ -308,26 +311,15 @@ const AssetDetailBody = ({
   );
 };
 
-// chain.evmExplorer is a template containing the literal "${hash}"
-// placeholder. Substitute the address in for a real link.
-const explorerHref = (chain: ChainInfo, hash: string): string | undefined => {
-  if (!chain.evmExplorer) return undefined;
-  return chain.evmExplorer.includes("${hash}")
-    ? chain.evmExplorer.replace("${hash}", hash)
-    : `${chain.evmExplorer.replace(/\/$/, "")}/address/${hash}`;
-};
-const solanaExplorerHref = (chain: ChainInfo, mint: string): string | undefined => {
-  if (!chain.solanaExplorer) return undefined;
-  return chain.solanaExplorer.includes("${hash}")
-    ? chain.solanaExplorer.replace("${hash}", mint)
-    : `${chain.solanaExplorer.replace(/\/$/, "")}/address/${mint}`;
-};
+// Token, aToken, debt-token and mint links open the explorer's address page.
+const explorerHref = (chain: ChainInfo, address: string): string | undefined => addressHref(chain.evmExplorer, address);
+const solanaExplorerHref = (chain: ChainInfo, mint: string): string | undefined => addressHref(chain.solanaExplorer, mint);
 
 // ───────────────── ReserveStatusCard (left column) ─────────────────
 
 const ReserveStatusCard = ({ reserve, utilization }: { reserve: Reserve; utilization: number }) => {
   const rows: Array<[string, React.ReactNode]> = [
-    ["Utilization", fmt.pct(utilization, 1)],
+    ["Utilization", fmtShare(utilization * 100)],
     ["Supply APY", <span style={{ color: "var(--hf-safe)" }}>{fmt.pct(reserve.supplyApy)}</span>],
     ["Borrow APY (variable)", <span style={{ color: "var(--hf-warn)" }}>{fmt.pct(reserve.borrowApy)}</span>],
     ["Max LTV", fmt.pct(reserve.ltv, 0)],
@@ -340,8 +332,8 @@ const ReserveStatusCard = ({ reserve, utilization }: { reserve: Reserve; utiliza
     ["Can be borrowed", reserve.canBeBorrowed
       ? <span style={{ color: "var(--hf-safe)" }}>Yes</span>
       : <span style={{ color: "var(--fg3)" }}>No</span>],
-    ["Supply cap", fmt.usd(reserve.supplyCap * reserve.priceUsd, { compact: true })],
-    ["Borrow cap", fmt.usd(reserve.borrowCap * reserve.priceUsd, { compact: true })],
+    ["Supply cap", fmt.cap(reserve.supplyCap, reserve.priceUsd)],
+    ["Borrow cap", fmt.cap(reserve.borrowCap, reserve.priceUsd)],
     ["E-mode category", <Tag tone={reserve.emodeCategory === "—" ? "neutral" : "brand"}>{reserve.emodeCategory}</Tag>],
     ["Isolation mode", reserve.isolation
       ? <Tag tone="warn">Yes</Tag>
@@ -350,7 +342,7 @@ const ReserveStatusCard = ({ reserve, utilization }: { reserve: Reserve; utiliza
   return (
     <div className="card" style={{ padding: "4px 20px" }}>
       <div style={{ padding: "16px 0 12px", borderBottom: "1px solid var(--border-subtle)" }}>
-        <Eyebrow>Reserve status</Eyebrow>
+        <Eyebrow>Status</Eyebrow>
       </div>
       {rows.map(([k, v], i) => (
         <div
@@ -396,16 +388,16 @@ const UserInfoCard = ({
       <div className="card" style={{ padding: 24, display: "flex", flexDirection: "column", alignItems: "center", gap: 16, textAlign: "center" }}>
         <div style={{
           width: 44, height: 44, borderRadius: 44,
-          background: "rgba(197, 139, 198, 0.10)",
+          background: "color-mix(in srgb, var(--bridge) 12%, transparent)",
           border: "1px solid var(--border-brand)",
           display: "flex", alignItems: "center", justifyContent: "center",
           color: "var(--fg-brand)",
         }}>
           <IconWallet size={18} />
         </div>
-        <div style={{ fontFamily: "var(--font-serif)", fontSize: 18 }}>Your info</div>
+        <div style={{ fontFamily: "var(--font-serif)", fontSize: 18 }}>Your position</div>
         <div style={{ color: "var(--fg2)", fontSize: 13 }}>
-          Connect your wallet to supply, borrow, or repay {symbol}.
+          Connect to supply, borrow or repay.
         </div>
         <Button variant="primary" onClick={onConnect}>Connect wallet</Button>
       </div>
@@ -421,11 +413,11 @@ const UserInfoCard = ({
         justifyContent: "space-between",
         alignItems: "center",
       }}>
-        <Eyebrow>Your info</Eyebrow>
+        <Eyebrow>Your position</Eyebrow>
         <span className="mono" style={{ fontSize: 11, color: "var(--fg2)" }}>
           Wallet:{" "}
           <span style={{ color: "var(--fg1)" }} className="tabular">
-            {fmt.num(position.walletBalance, 4)} {symbol}
+            {fmtAmount(position.walletBalance)} {symbol}
           </span>
         </span>
       </div>
@@ -435,7 +427,7 @@ const UserInfoCard = ({
         <div style={infoRowStyle}>
           <span style={infoLabelStyle}>Supplied</span>
           <span className="mono tabular" style={{ color: "var(--fg1)" }}>
-            {fmt.num(position.suppliedBalance, 4)} {symbol}
+            {fmtAmount(position.suppliedBalance)} {symbol}
           </span>
         </div>
         <div style={infoRowStyle}>
@@ -467,7 +459,7 @@ const UserInfoCard = ({
         <div style={infoRowStyle}>
           <span style={infoLabelStyle}>Borrowed</span>
           <span className="mono tabular" style={{ color: "var(--fg1)" }}>
-            {fmt.num(position.debtBalance, 4)} {symbol}
+            {fmtAmount(position.debtBalance)} {symbol}
           </span>
         </div>
         <div style={infoRowStyle}>
@@ -479,7 +471,7 @@ const UserInfoCard = ({
         <div style={infoRowStyle}>
           <span style={infoLabelStyle}>Available to borrow</span>
           <span className="mono tabular" style={{ color: "var(--fg1)" }}>
-            {fmt.usd(availableBorrowsUsd, { compact: true })}
+            {fmtUsd(availableBorrowsUsd)}
           </span>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
@@ -518,12 +510,14 @@ const CapBarFull = ({
   total,
   colorOk = "var(--fg-brand)",
   colorWarn = "var(--hf-warn)",
+  format = fmtAmount,
 }: {
   label: string;
   used: number;
   total: number;
   colorOk?: string;
   colorWarn?: string;
+  format?: (n: number) => string;
 }) => {
   const pct = total > 0 ? Math.min(1, used / total) : 0;
   const color = pct > 0.85 ? colorWarn : colorOk;
@@ -539,9 +533,9 @@ const CapBarFull = ({
         textTransform: "uppercase",
         marginBottom: 4,
       }}>
-        <span>{label} {fmt.pct(pct, 0)}</span>
+        <span>{label}{total > 0 ? ` ${fmt.pct(pct, 0)}` : ""}</span>
         <span className="tabular" style={{ color: "var(--fg2)" }}>
-          {fmt.num(used, 0)}/{fmt.num(total, 0)}
+          {total > 0 ? `${format(used)}/${format(total)}` : `${format(used)} · No cap`}
         </span>
       </div>
       <div style={{ height: 4, background: "var(--bg-surface-3)", borderRadius: 3 }}>
@@ -554,32 +548,21 @@ const CapBarFull = ({
 // ───────────────── Interest-rate curve ─────────────────
 
 const IRCurveChart = ({ reserve }: { reserve: Reserve }) => {
-  const W = 720, H = 220, padL = 50, padR = 16, padT = 18, padB = 30;
+  const { W, H, padL, padR, padT, padB } = IR;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
   const U_opt = reserve.optimalUsageRatio;
-  const maxRate = reserve.slope1 + reserve.slope2 + 0.04;
-
-  // Variable borrow rate as a function of utilization. Above the kink
-  // (U_opt) the curve steepens by slope2 / (1 - U_opt).
-  const rateAt = (u: number) => {
-    if (u <= U_opt) return (u / U_opt) * reserve.slope1;
-    return reserve.slope1 + ((u - U_opt) / (1 - U_opt)) * reserve.slope2;
-  };
-  const points: Array<[number, number]> = [];
-  for (let i = 0; i <= 100; i++) {
-    const u = i / 100;
-    points.push([padL + (u * innerW), padT + innerH - (rateAt(u) / maxRate) * innerH]);
-  }
-  const path = "M " + points.map((p) => p.join(",")).join(" L ");
   const cur = reserve.totalSupply > 0 ? reserve.totalBorrow / reserve.totalSupply : 0;
-  const curX = padL + cur * innerW;
-  const curY = padT + innerH - (rateAt(cur) / maxRate) * innerH;
-  const kinkX = padL + U_opt * innerW;
-  const kinkY = padT + innerH - (rateAt(U_opt) / maxRate) * innerH;
+  const curText = `Current · ${fmtShare(cur * 100)}`;
+  const kinkText = `U_opt = ${fmt.pct(U_opt, 0)}`;
+  const L = irLayout({ cur, uOpt: U_opt, slope1: reserve.slope1, slope2: reserve.slope2 }, curText, kinkText);
+  const { maxRate, curX, curY, kinkX, kinkY } = L;
+  const points: Array<[number, number]> = [];
+  for (let i = 0; i <= 100; i++) points.push([L.xOf(i / 100), L.yOf(i / 100)]);
+  const path = "M " + points.map((p) => p.join(",")).join(" L ");
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", maxWidth: W, height: "auto", display: "block" }}>
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", minWidth: 560, maxWidth: W, height: "auto", display: "block" }}>
       {[0, 0.25, 0.5, 0.75, 1.0].map((t) => {
         const y = padT + innerH - t * innerH;
         return (
@@ -602,25 +585,26 @@ const IRCurveChart = ({ reserve }: { reserve: Reserve }) => {
       <path d={path + ` L ${padL + innerW},${padT + innerH} L ${padL},${padT + innerH} Z`} fill="url(#irGrad)" opacity="0.4" />
       <defs>
         <linearGradient id="irGrad" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="#C58BC6" stopOpacity="0.5" />
-          <stop offset="100%" stopColor="#C58BC6" stopOpacity="0" />
+          <stop offset="0%" stopColor="var(--bridge)" stopOpacity="0.5" />
+          <stop offset="100%" stopColor="var(--bridge)" stopOpacity="0" />
         </linearGradient>
       </defs>
       <path d={path} fill="none" stroke="var(--fg-brand)" strokeWidth="2" />
       <line x1={kinkX} x2={kinkX} y1={kinkY} y2={padT + innerH} stroke="var(--border-default)" strokeDasharray="3 3" />
       <circle cx={kinkX} cy={kinkY} r="3" fill="var(--fg-brand)" />
-      <text x={kinkX + 8} y={kinkY - 8} fill="var(--fg2)" fontSize="10" fontFamily="var(--font-mono)">
-        U_opt = {fmt.pct(U_opt, 0)}
+      <text x={L.kink.x} y={L.kink.y} textAnchor={L.kink.anchor} fill="var(--fg2)" fontSize="10" fontFamily="var(--font-mono)">
+        {kinkText}
       </text>
       <line x1={curX} x2={curX} y1={curY} y2={padT + innerH} stroke="var(--hf-warn)" strokeDasharray="2 2" />
       <circle cx={curX} cy={curY} r="5" fill="var(--hf-warn)" stroke="var(--bg-surface)" strokeWidth="2" />
-      <text x={curX + 8} y={curY + 14} fill="var(--hf-warn)" fontSize="11" fontFamily="var(--font-mono)" fontWeight="500">
-        Current · {fmt.pct(cur, 1)}
+      <text x={L.current.x} y={L.current.y} textAnchor={L.current.anchor}
+        fill="var(--hf-warn)" fontSize="11" fontFamily="var(--font-mono)" fontWeight="500">
+        {curText}
       </text>
-      <text x={W / 2} y={H - 4} fill="var(--fg2)" fontSize="10" fontFamily="var(--font-mono)" textAnchor="middle" letterSpacing="0.1em">
+      <text x={W / 2} y={H - 6} fill="var(--fg2)" fontSize="10" fontFamily="var(--font-mono)" textAnchor="middle" letterSpacing="0.1em">
         UTILIZATION
       </text>
-      <text x={12} y={padT + 4} fill="var(--fg2)" fontSize="10" fontFamily="var(--font-mono)" letterSpacing="0.1em">
+      <text x={12} y={12} fill="var(--fg2)" fontSize="10" fontFamily="var(--font-mono)" letterSpacing="0.1em">
         BORROW APY
       </text>
     </svg>

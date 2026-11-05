@@ -6,8 +6,11 @@ import { defineChain } from "viem";
 import {
   getAaveDeployment,
   getChain,
+  bridgeUiUrl,
   type AaveReserveEntry,
 } from "./registry-config";
+import { balanceOrZero, readOrOnRevert } from "./balance-read";
+import { SPL_WRAPPER_PROBE_ABI, mintIdToBase58 } from "./wrapperGrant";
 import { UiPoolDataProviderV3Abi, PoolAbi } from "./abi";
 
 const SECONDS_PER_YEAR = 31_536_000n;
@@ -115,7 +118,7 @@ export interface DemoConfig {
   emodeCategories: EmodeCategoryConfig[];
   // Generation timestamp + provenance.
   generatedAt: string;
-  aave_v3_ref: string;
+  rome_aave_v3_ref: string;
 }
 
 export interface EmodeCategoryConfig {
@@ -165,7 +168,16 @@ export async function buildDemoConfig(chainId: number): Promise<DemoConfig> {
     dep.reserves.map((r) => [r.underlying.toLowerCase(), r]),
   );
 
-  const reserves: ReserveSnapshot[] = reservesData.map((r) => {
+  // The Solana mint behind each wrapper (`mint_id()`). A plain ERC-20 reverts (no mint);
+  // any other error is retried then thrown, so a config missing a mint is never cached.
+  const mints = await Promise.all(reservesData.map((r) =>
+    readOrOnRevert<string | null>(async () => {
+      const id = (await client.readContract({ address: r.underlyingAsset as `0x${string}`, abi: SPL_WRAPPER_PROBE_ABI, functionName: "mint_id" })) as `0x${string}`;
+      return mintIdToBase58(id);
+    }, null),
+  ));
+
+  const reserves: ReserveSnapshot[] = reservesData.map((r, idx) => {
     const entry = byUnderlying.get((r.underlyingAsset as string).toLowerCase());
     const display = entry?.displaySymbol ?? r.symbol ?? "?";
     const decimals = Number(r.decimals ?? entry?.decimals ?? 18);
@@ -220,7 +232,7 @@ export async function buildDemoConfig(chainId: number): Promise<DemoConfig> {
       contract: r.underlyingAsset as string,
       aToken: r.aTokenAddress as string,
       varDebt: r.variableDebtTokenAddress as string,
-      solanaMint: null,
+      solanaMint: mints[idx] ?? null,
     };
   });
 
@@ -250,7 +262,7 @@ export async function buildDemoConfig(chainId: number): Promise<DemoConfig> {
       rpcUrl: chain.rpcUrl,
       evmExplorer: `${evmExplorerBase}/tx/\${hash}`,
       solanaExplorer: `${chain.solana?.explorerUrl ?? "https://explorer.solana.com"}/tx/\${sig}?cluster=${chain.solana?.cluster ?? "devnet"}`,
-      bridgeUrl: `https://bridge.${dep.chainSlug}.${chain.network}.romeprotocol.xyz`,
+      bridgeUrl: bridgeUiUrl(chainId),
       status: chain.status === "live" ? "live" : "degraded",
     },
     reserves,
@@ -266,7 +278,7 @@ export async function buildDemoConfig(chainId: number): Promise<DemoConfig> {
     },
     emodeCategories,
     generatedAt: new Date().toISOString(),
-    aave_v3_ref: dep.sourceCommits?.aave ?? "Aave v3@unknown",
+    rome_aave_v3_ref: dep.sourceCommits.aave ?? "rome-aave-v3@unknown",
   };
 }
 
@@ -381,27 +393,16 @@ export async function loadFullUserData(chainId: number, user: `0x${string}`): Pr
   //    it's not worth a multicall round-trip for now.
   const walletBalances = await Promise.all(
     userReserves.map(async (ur) => {
-      try {
-        const bal = (await client.readContract({
+      // Only a real contract revert (a token not minted yet) reads as 0; a
+      // transport error is retried, then thrown so the route shows an error.
+      return balanceOrZero(async () =>
+        (await client.readContract({
           address: ur.underlyingAsset as `0x${string}`,
           abi: ERC20_BALANCE_OF_ABI,
           functionName: "balanceOf",
           args: [user],
-        })) as unknown as bigint;
-        return bal;
-      } catch (e) {
-        // Plain ERC20s pre-mint (e.g. before faucet claim) revert on balanceOf;
-        // that's a deliberate "treat as 0" case so the response isn't poisoned.
-        // A transport / RPC error is different — silently coercing it to 0
-        // left the supply guard blocking a real holder under "Wallet: 0".
-        // Re-throw so the API route surfaces an error banner instead of
-        // misleading zero data.
-        const name = (e as Error)?.name ?? "";
-        const isRevert =
-          name === "ContractFunctionExecutionError" || name === "ContractFunctionRevertedError";
-        if (isRevert) return 0n;
-        throw e;
-      }
+        })) as unknown as bigint,
+      );
     }),
   );
 

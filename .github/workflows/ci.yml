@@ -1,7 +1,6 @@
 name: CI
 
-# PR-time gate: tsc + next build. Anything that lands here gates the merge.
-# Image build/push lives in docker_build.yml, which only fires on main.
+# PR-time gate: tsc + tests + next build. Anything that lands here gates the merge.
 
 on:
   push:
@@ -25,6 +24,9 @@ jobs:
 
       - name: Typecheck
         run: npx tsc --noEmit
+
+      - name: Theme readability test
+        run: node --test lib/themePalette.test.mjs
 
       - name: Test
         run: npm test --if-present

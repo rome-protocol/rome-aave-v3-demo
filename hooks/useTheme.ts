@@ -1,10 +1,11 @@
 "use client";
 
 // Resolves the effective theme from the persisted preference + OS setting,
-// applies it to <html data-theme="..."> so public/styles.css picks the right
-// palette, and exposes a toggle. The no-flash initial paint is handled by the
-// blocking inline script in app/layout.tsx — this hook keeps the attribute in
-// sync after hydration + when the OS theme changes under a "system" preference.
+// applies it to <html data-rome-theme="..."> so app/theme.css picks the right
+// palette, and exposes the choice (light / system / dark). The no-flash initial
+// paint is handled by the blocking script public/theme-init.js — this hook keeps
+// the attributes in sync after hydration + when the OS theme changes under a
+// "system" preference.
 
 import { useEffect, useState } from "react";
 import {
@@ -13,8 +14,18 @@ import {
   type EffectiveTheme,
 } from "@/store/themeStore";
 
+// The phone browser bar takes the page colour of each palette (theme.css --ground).
+const BAR_COLOUR: Record<EffectiveTheme, string> = { light: "#EFEBFB", dark: "#0A0421" };
+
 function applyTheme(effective: EffectiveTheme) {
-  document.documentElement.setAttribute("data-theme", effective);
+  const root = document.documentElement;
+  // Same attributes as public/theme-init.js. data-rome-theme is the hook theme.css reads;
+  // data-theme is the one this app's styles.css has always used.
+  root.setAttribute("data-rome-theme", effective);
+  root.setAttribute("data-theme", effective);
+  root.classList.toggle("dark", effective === "dark");
+  root.style.colorScheme = effective;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", BAR_COLOUR[effective]);
 }
 
 export function useTheme() {

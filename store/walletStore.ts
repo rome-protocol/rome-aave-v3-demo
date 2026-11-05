@@ -2,13 +2,12 @@ import { create } from 'zustand';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import type { Connector } from '@wagmi/core';
-import { Connection, Transaction } from '@solana/web3.js';
 import { toast } from 'react-toastify';
 import { useEffect, useRef } from 'react';
 import { useChainStore } from './chainStore';
 import { getErrorText, sanitizeError, logger } from '@/utils/errorHandler';
 import { sessionManager } from '@/utils/sessionManager';
-import { resolveKnownEvmWallet, KNOWN_EVM_WALLETS } from '@/utils/wallet';
+import { evmRowId, resolveKnownEvmWallet, KNOWN_EVM_WALLETS } from '@/utils/wallet';
 import { beginChainSwitch, endChainSwitch } from '@/utils/chainSwitchGuard';
 import { requestEvmChainSwitch } from '@/utils/evmChainSwitch';
 
@@ -41,7 +40,7 @@ interface SolanaWalletSupport {
 
 const SOLANA_WALLET_SUPPORT: SolanaWalletSupport[] = [
   { name: 'Phantom', installUrl: 'https://phantom.app/download' },
-  { name: 'Solflare' },
+  { name: 'Solflare', installUrl: 'https://solflare.com/download' },
   { name: 'Backpack' },
   { name: 'Trust' },
   { name: 'Coinbase Wallet' },
@@ -59,6 +58,11 @@ interface WalletState {
   resetModalView: () => void;
   setConnecting: (walletName: string | null) => void;
 }
+
+const GENERIC_WALLET_ICON = '/images/ic_wallet.svg';
+/** A known wallet's own artwork wins; the shared generic mark is only a fallback, after the icon the extension announces (EIP-6963). */
+const walletIcon = (known: string | undefined, announced: string | undefined): string =>
+  (known && known !== GENERIC_WALLET_ICON ? known : announced || known || GENERIC_WALLET_ICON);
 
 export const useWalletStore = create<WalletState>((set) => ({
   isModalOpen: false,
@@ -131,7 +135,10 @@ export const useWallets = () => {
   const { connectAsync, connectors } = useConnect();
   const { disconnect: evmDisconnect } = useDisconnect();
   const isSolanaSessionConnected = solana.connected || Boolean(solana.publicKey);
-  const rawConnectedEvmWalletId = evm.connector?.id || null;
+  // The row id of the wallet list (a known wallet's own id, else the connector's), so the chooser and the account menu find the connected wallet.
+  const rawConnectedEvmWalletId = evm.connector
+    ? evmRowId(evm.connector)
+    : null;
   const connectedEvmWalletId = evm.isConnected && isChainReady ? rawConnectedEvmWalletId : null;
   const connectedSolanaWalletId = isSolanaSessionConnected && solana.wallet?.adapter.name
     ? `solana:${solana.wallet.adapter.name}`
@@ -144,9 +151,9 @@ export const useWallets = () => {
     });
 
     return {
-      id: knownWallet?.id || connector.id,
+      id: evmRowId(connector),
       name: knownWallet?.name || connector.name,
-      icon: knownWallet?.icon || connector.icon || '/images/ic_wallet.svg',
+      icon: walletIcon(knownWallet?.icon, connector.icon),
       type: 'evm' as const,
       installed: true,
     };
@@ -423,33 +430,6 @@ export const useWallets = () => {
     }
   };
   
-  const signSolanaTransaction = async (tx: Transaction) => {
-    if (!solana.signTransaction) {
-      throw new Error('Solana wallet not connected');
-    }
-    return await solana.signTransaction(tx);
-  };
-
-  // Use signAndSendTransaction for Phantom compatibility (avoids spam warning)
-  const sendSolanaTransaction = async (tx: Transaction, connection: Connection) => {
-    if (!solana.sendTransaction) {
-      throw new Error('Solana wallet not connected');
-    }
-
-    try {
-      return await solana.sendTransaction(tx, connection, {
-        maxRetries: 3,
-        preflightCommitment: 'confirmed',
-        skipPreflight: false,
-      });
-    } catch (error) {
-      logger.error('Solana sendTransaction failed:', error);
-
-      const details = error instanceof Error ? error.message : String(error);
-      throw new Error(`Solana transaction failed: ${details}`);
-    }
-  };
-
   const openModalForView = async (view: WalletModalView = 'all') => {
     // With install-link rows, eligibleWallets always has many entries. Only
     // skip the modal when exactly one *installed* wallet is eligible and
@@ -503,6 +483,10 @@ export const useWallets = () => {
       Boolean(evm.isConnected) && isSwitchingChain,
     
     solanaAddress: solana.publicKey?.toBase58() || null,
+    /** The connected wallet-adapter adapter; a Wallet Standard wallet is reachable through it (see lib/lane/walletStandard.ts). */
+    solanaAdapter: solana.wallet?.adapter ?? null,
+    /** wallet-adapter's raw-bytes message signer, when the adapter offers one. */
+    solanaSignMessage: solana.signMessage ?? null,
     solanaConnected: isSolanaSessionConnected,
     solanaConnecting: Boolean(connecting?.startsWith('solana:')),
     connectedSolanaWalletId,
@@ -536,8 +520,6 @@ export const useWallets = () => {
       sessionManager.clear();
       if (wasConnected) toast.info('All disconnected');
     },
-    signSolanaTransaction,
-    sendSolanaTransaction,
     getAvailableWallets,
   };
 };

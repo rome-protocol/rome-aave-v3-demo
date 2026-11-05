@@ -3,9 +3,9 @@
 // Phase-machine hook backing ActionModal for the four supply-side actions
 // (supply / withdraw / borrow / repay).
 //
-//   useWriteContract for the approve + Pool action,
+//   useSendAaveCall for the grant + approve + Pool action (EVM wallet or Solana wallet),
 //   useReadContract  for the allowance probe,
-//   publicClient.estimateContractGas for the the Rome web app 1.3× gas buffer.
+//   publicClient.estimateContractGas for the Rome web app 1.3× gas buffer.
 //
 // `submit()` runs the phase progression sequentially — `approving` only
 // when the existing allowance can't cover the action, then `executing`.
@@ -14,21 +14,21 @@
 // without a manual refresh. Liquidate + FlashLoan have their own hooks.
 
 import { useCallback, useMemo, useState } from "react";
-import {
-  useAccount,
-  usePublicClient,
-  useReadContract,
-  useWriteContract,
-} from "wagmi";
-import { maxUint256, parseUnits } from "viem";
+import { usePublicClient, useReadContract } from "wagmi";
+import { useActiveAddress } from "@/hooks/useActiveLane";
+import { useSendAaveCall } from "@/hooks/useSendAaveCall";
+import { useSyntheticLegs } from "@/hooks/useSyntheticLegs";
+import { fundShortfall, withAccrualBuffer } from "@/lib/solana/legs";
+import { formatUnits, maxUint256, parseUnits } from "viem";
 import { useQueryClient } from "@tanstack/react-query";
 import { Erc20Abi, PoolAbi } from "@/lib/abi";
 import { hadrian } from "@/lib/wagmi";
 import { decodeAaveError } from "@/lib/decode-aave-error";
-import { waitForReceiptWithTimeout } from "@/lib/wait-for-receipt";
+import { requireSuccess, TxNotConfirmedError } from "@/lib/wait-for-receipt";
+import { markFresh } from "@/lib/fresh";
 
 export type ActionMode = "supply" | "withdraw" | "borrow" | "repay";
-export type ActionPhase = "editing" | "approving" | "executing" | "success" | "error";
+export type ActionPhase = "editing" | "funding" | "granting" | "approving" | "executing" | "depositing" | "relaying" | "sweeping" | "success" | "error";
 
 const RATE_MODE_VARIABLE = 2n;
 
@@ -52,6 +52,14 @@ export interface UseAaveActionResult {
   phase: ActionPhase;
   needsApprove: boolean;
   amountRaw: bigint;
+  /** Solana lane: the wallet → synthetic top-up this action needed (Solana signature). */
+  fundSignature: string | null;
+  /** Solana lane: the synthetic → wallet return of what the action produced (EVM tx hash). */
+  sweepHash: `0x${string}` | null;
+  /** Solana lane, native SOL: the Solana signature that turned the returned wrapped SOL into plain SOL. */
+  unwrapSignature: string | null;
+  /** The one-time wrapper enable, when this action had to send it. */
+  grantHash: `0x${string}` | null;
   approveHash: `0x${string}` | null;
   executeHash: `0x${string}` | null;
   error: string | null;
@@ -67,12 +75,17 @@ export function useAaveAction({
   decimals,
   amount,
 }: UseAaveActionInput): UseAaveActionResult {
-  const { address: user } = useAccount();
+  const { address: user, lane } = useActiveAddress();
   const publicClient = usePublicClient({ chainId: hadrian.id });
-  const { writeContractAsync } = useWriteContract();
+  const { sendCall, ensureWrapperGrant, wasRelayed } = useSendAaveCall();
+  const legs = useSyntheticLegs();
   const queryClient = useQueryClient();
 
   const [phase, setPhase] = useState<ActionPhase>("editing");
+  const [fundSignature, setFundSignature] = useState<string | null>(null);
+  const [sweepHash, setSweepHash] = useState<`0x${string}` | null>(null);
+  const [unwrapSignature, setUnwrapSignature] = useState<string | null>(null);
+  const [grantHash, setGrantHash] = useState<`0x${string}` | null>(null);
   const [approveHash, setApproveHash] = useState<`0x${string}` | null>(null);
   const [executeHash, setExecuteHash] = useState<`0x${string}` | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -125,6 +138,13 @@ export function useAaveAction({
   const needsApprove = needsAllowance && (allowance ?? 0n) < allowanceTarget;
 
   const submit = useCallback(async () => {
+    // A new attempt starts clean: a link from an earlier attempt must not show in this one's error phase.
+    setFundSignature(null);
+    setSweepHash(null);
+    setUnwrapSignature(null);
+    setGrantHash(null);
+    setApproveHash(null);
+    setExecuteHash(null);
     if (!user || !asset || !pool || !publicClient) {
       setError("Wallet or chain not ready");
       setPhase("error");
@@ -137,54 +157,104 @@ export function useAaveAction({
     }
 
     setError(null);
+    let funded = false; // tokens moved wallet → synthetic by this action
+    let sweptInStep3 = false; // the step-3 sweep already ran and reported its own result
 
     try {
+      // ── Solana lane, step −1: top the synthetic up from the wallet ─────
+      // The synthetic holds nothing at rest; what supply/repay pulls must be
+      // moved in first, and only the missing part.
+      if (lane === "solana" && needsAllowance) {
+        const needed = amountRaw === maxUint256
+          ? withAccrualBuffer(parseUnits(String(maxAmount ?? 0), decimals))
+          : amountRaw;
+        const held = await legs.syntheticBalance(asset);
+        const shortfall = fundShortfall(held, needed);
+        if (shortfall > 0n) {
+          const inWallet = await legs.walletBalance(asset);
+          if (inWallet < shortfall) {
+            throw new Error(`Your wallet holds ${formatUnits(inWallet, decimals)} and this needs ${formatUnits(shortfall, decimals)} more than the ${formatUnits(held, decimals)} already available.`);
+          }
+          setPhase("funding");
+          const sig = await legs.fund(asset, shortfall);
+          funded = true;
+          setFundSignature(sig);
+        }
+      }
+
+      // ── Step 0: enable the wrapper (once per wrapper, when tokens leave the wallet) ──
+      // The wrapper moves SPL as the holder's delegate; without this one-time
+      // grant a supply/repay reverts inside the wrapper even with allowance.
+      if (needsAllowance) {
+        setPhase("granting");
+        const gHash = await ensureWrapperGrant(asset);
+        if (gHash) {
+          setGrantHash(gHash);
+          await requireSuccess(publicClient, gHash, wasRelayed(gHash), { linkInMessage: true });
+        }
+      }
+
       // ── Step 1: approve (only if allowance is short) ─────────────
       if (needsApprove) {
         setPhase("approving");
-        const estApprove = await publicClient.estimateContractGas({
-          account: user,
-          address: asset,
-          abi: Erc20Abi,
-          functionName: "approve",
-          args: [pool, maxUint256],
-        });
-        const gas = (estApprove * 13_000n) / 10_000n;
-        const aHash = await writeContractAsync({
-          address: asset,
-          abi: Erc20Abi,
-          functionName: "approve",
-          args: [pool, maxUint256],
-          chainId: hadrian.id,
-          gas,
-        });
+        const aHash = await sendCall({ address: asset, abi: Erc20Abi, functionName: "approve", args: [pool, maxUint256] });
         setApproveHash(aHash);
-        await waitForReceiptWithTimeout(publicClient, aHash);
+        await requireSuccess(publicClient, aHash, wasRelayed(aHash), { linkInMessage: true });
         await refetchAllowance();
       }
 
       // ── Step 2: the Pool action ──────────────────────────────────
       setPhase("executing");
-      const xHash = await runAction({
-        mode,
-        user,
-        asset,
-        pool,
-        amountRaw,
-        publicClient,
-        writeContractAsync,
-      });
+      const xHash = await sendCall(actionCall({ mode, user, asset, pool, amountRaw }), { onPhase: (p) => setPhase(p) });
       setExecuteHash(xHash);
-      await waitForReceiptWithTimeout(publicClient, xHash);
+      // A reverted tx is an error, never "success"; a relayed send's receipt is polled for. A relayed send
+      // returns only after its legs landed, so a missing receipt still lets the sweep below run.
+      let unconfirmed: TxNotConfirmedError | null = null;
+      try {
+        await requireSuccess(publicClient, xHash, wasRelayed(xHash));
+      } catch (e) {
+        if (!(e instanceof TxNotConfirmedError) || lane !== "solana") throw e;
+        unconfirmed = e;
+      }
+
+      // ── Solana lane, step 3: return what the action produced (or left over) to the wallet ──
+      if (lane === "solana" && (mode === "withdraw" || mode === "borrow" || (mode === "repay" && amountRaw === maxUint256))) {
+        setPhase("sweeping");
+        sweptInStep3 = true;
+        try {
+          const swept = await legs.sweepAll(asset);
+          if (swept.evmTxHash) setSweepHash(swept.evmTxHash);
+          if (swept.closeSignature) setUnwrapSignature(swept.closeSignature);
+          if (unconfirmed && swept.tokens > 0n) unconfirmed.message += " The funds were returned to your wallet.";
+        } catch (se: unknown) {
+          if (!unconfirmed) throw se;
+          unconfirmed.message += ` Returning the funds to your wallet failed (${decodeAaveError(se)}); they are still in your Rome account.`;
+        }
+      }
+      if (unconfirmed) throw unconfirmed;
 
       setPhase("success");
 
       // Surface the new balances on Markets + Dashboard + AssetDetail
       // without forcing a manual refresh.
+      markFresh();
       void queryClient.invalidateQueries({ queryKey: ["user-data"] });
       void queryClient.invalidateQueries({ queryKey: ["aave-config"] });
     } catch (e: unknown) {
-      setError(decodeAaveError(e));
+      let message = decodeAaveError(e);
+      // A step after funding failed: send what was moved in back to the wallet (best effort).
+      if (funded && lane === "solana" && !(sweptInStep3 && e instanceof TxNotConfirmedError)) {
+        try {
+          setPhase("sweeping");
+          const swept = await legs.sweepAll(asset);
+          if (swept.evmTxHash) setSweepHash(swept.evmTxHash);
+          if (swept.closeSignature) setUnwrapSignature(swept.closeSignature);
+          message += swept.tokens > 0n ? " The funds moved in for this action were returned to your wallet." : "";
+        } catch (se: unknown) {
+          message += ` Returning the funds to your wallet also failed (${decodeAaveError(se)}); they are still in your Rome account.`;
+        }
+      }
+      setError(message);
       setPhase("error");
     }
   }, [
@@ -195,13 +265,24 @@ export function useAaveAction({
     publicClient,
     amountRaw,
     needsApprove,
-    writeContractAsync,
+    needsAllowance,
+    lane,
+    legs,
+    maxAmount,
+    decimals,
+    sendCall,
+    ensureWrapperGrant,
+    wasRelayed,
     refetchAllowance,
     queryClient,
   ]);
 
   const reset = useCallback(() => {
     setPhase("editing");
+    setFundSignature(null);
+    setSweepHash(null);
+    setUnwrapSignature(null);
+    setGrantHash(null);
     setApproveHash(null);
     setExecuteHash(null);
     setError(null);
@@ -211,6 +292,10 @@ export function useAaveAction({
     phase,
     needsApprove,
     amountRaw,
+    fundSignature,
+    sweepHash,
+    unwrapSignature,
+    grantHash,
     approveHash,
     executeHash,
     error,
@@ -219,100 +304,29 @@ export function useAaveAction({
   };
 }
 
-// Per-mode dispatch. Each call estimates gas + writes with the same 1.3×
-// buffer as the faucet (the Rome web app pattern). Returning the tx hash to the
-// caller lets the modal show the explorer link.
-
-type PublicClient = NonNullable<ReturnType<typeof usePublicClient>>;
-type WriteAsync = ReturnType<typeof useWriteContract>["writeContractAsync"];
-
-async function runAction({
+// Per-mode call descriptor. The lane-agnostic `sendCall` estimates + sends it
+// (EVM wallet: wagmi with the 1.3× buffer; Solana wallet: atomic TxV1 via the proxy).
+export function actionCall({
   mode,
   user,
   asset,
   pool,
   amountRaw,
-  publicClient,
-  writeContractAsync,
 }: {
   mode: ActionMode;
   user: `0x${string}`;
   asset: `0x${string}`;
   pool: `0x${string}`;
   amountRaw: bigint;
-  publicClient: PublicClient;
-  writeContractAsync: WriteAsync;
-}): Promise<`0x${string}`> {
-  const bufferedGas = async (estimate: bigint) => (estimate * 13_000n) / 10_000n;
-
+}): { address: `0x${string}`; abi: typeof PoolAbi; functionName: "supply" | "withdraw" | "borrow" | "repay"; args: readonly unknown[] } {
   switch (mode) {
-    case "supply": {
-      const est = await publicClient.estimateContractGas({
-        account: user,
-        address: pool,
-        abi: PoolAbi,
-        functionName: "supply",
-        args: [asset, amountRaw, user, 0],
-      });
-      return writeContractAsync({
-        address: pool,
-        abi: PoolAbi,
-        functionName: "supply",
-        args: [asset, amountRaw, user, 0],
-        chainId: hadrian.id,
-        gas: await bufferedGas(est),
-      });
-    }
-    case "withdraw": {
-      const est = await publicClient.estimateContractGas({
-        account: user,
-        address: pool,
-        abi: PoolAbi,
-        functionName: "withdraw",
-        args: [asset, amountRaw, user],
-      });
-      return writeContractAsync({
-        address: pool,
-        abi: PoolAbi,
-        functionName: "withdraw",
-        args: [asset, amountRaw, user],
-        chainId: hadrian.id,
-        gas: await bufferedGas(est),
-      });
-    }
-    case "borrow": {
-      const est = await publicClient.estimateContractGas({
-        account: user,
-        address: pool,
-        abi: PoolAbi,
-        functionName: "borrow",
-        args: [asset, amountRaw, RATE_MODE_VARIABLE, 0, user],
-      });
-      return writeContractAsync({
-        address: pool,
-        abi: PoolAbi,
-        functionName: "borrow",
-        args: [asset, amountRaw, RATE_MODE_VARIABLE, 0, user],
-        chainId: hadrian.id,
-        gas: await bufferedGas(est),
-      });
-    }
-    case "repay": {
-      const est = await publicClient.estimateContractGas({
-        account: user,
-        address: pool,
-        abi: PoolAbi,
-        functionName: "repay",
-        args: [asset, amountRaw, RATE_MODE_VARIABLE, user],
-      });
-      return writeContractAsync({
-        address: pool,
-        abi: PoolAbi,
-        functionName: "repay",
-        args: [asset, amountRaw, RATE_MODE_VARIABLE, user],
-        chainId: hadrian.id,
-        gas: await bufferedGas(est),
-      });
-    }
+    case "supply":
+      return { address: pool, abi: PoolAbi, functionName: "supply", args: [asset, amountRaw, user, 0] };
+    case "withdraw":
+      return { address: pool, abi: PoolAbi, functionName: "withdraw", args: [asset, amountRaw, user] };
+    case "borrow":
+      return { address: pool, abi: PoolAbi, functionName: "borrow", args: [asset, amountRaw, RATE_MODE_VARIABLE, 0, user] };
+    case "repay":
+      return { address: pool, abi: PoolAbi, functionName: "repay", args: [asset, amountRaw, RATE_MODE_VARIABLE, user] };
   }
 }

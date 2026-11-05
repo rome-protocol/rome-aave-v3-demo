@@ -6,7 +6,7 @@
 // indexes signature counts only).
 
 import { useState } from "react";
-import { useAccount } from "wagmi";
+import { useActiveAddress } from "@/hooks/useActiveLane";
 import { useUniWallet } from "@/hooks/useUniWallet";
 import {
   Banner,
@@ -32,7 +32,8 @@ import {
 import type { FC, ReactNode } from "react";
 import { useAaveConfig, useUserHistory } from "@/hooks/useAaveData";
 import { useTxSolanaSigs } from "@/hooks/useTxSolanaSigs";
-import { fmt } from "@/lib/format";
+import { fmt, fmtAmount, fmtUsd } from "@/lib/format";
+import { NETWORK_ON } from "@/lib/brand";
 import { evmExplorerTxUrl, solanaExplorerTxUrl, fallbackChainInfo } from "@/lib/registry-config";
 import { hadrian } from "@/lib/wagmi";
 import type { ChainInfo, HistoryRow, Reserve } from "@/lib/types";
@@ -65,14 +66,16 @@ const ACTION_META: Record<HistoryRow["action"], ActionMeta> = {
   LiquidationCall: { Icon: IconBoom,        tone: "danger",  verb: "Liquidated"   },
 };
 
+const ACTION_LABELS: Record<string, string> = { FlashLoan: "Flash loan", LiquidationCall: "Liquidation" };
+
 const ACTION_OPTIONS: ActionFilter[] = ["All", "Supply", "Borrow", "Repay", "Withdraw", "FlashLoan", "LiquidationCall"];
 
 export function HistoryContent() {
   const cfg = useAaveConfig();
   const hist = useUserHistory(50);
-  const { isConnected } = useAccount();
+  const { isConnected } = useActiveAddress();
   const wallet = useUniWallet();
-  const openConnectModal = () => wallet.openFilteredWalletModal("evm");
+  const openConnectModal = () => wallet.openFilteredWalletModal("all");
 
   const [typeFilter, setTypeFilter] = useState<ActionFilter>("All");
   const [assetFilter, setAssetFilter] = useState<string>("Any");
@@ -89,7 +92,7 @@ export function HistoryContent() {
     return (
       <ShellWithPlaceholder>
         <Banner variant="danger" icon={<IconAlert size={16} />}>
-          Couldn&rsquo;t reach the chain RPC. Reserve data is unavailable.
+          Can&rsquo;t load market data.
         </Banner>
       </ShellWithPlaceholder>
     );
@@ -108,7 +111,7 @@ export function HistoryContent() {
         <Container max={1280} style={{ paddingTop: 20, paddingBottom: 40 }}>
           <PageHero eyebrow="History" title="Your activity" />
           <div style={{ paddingTop: 24 }}>
-            <WalletPrompt onConnect={openConnectModal} />
+            <WalletPrompt body="Connect to see your activity." onConnect={openConnectModal} />
           </div>
         </Container>
         <PageFooter chain={chain} />
@@ -135,11 +138,11 @@ export function HistoryContent() {
         <PageHero
           eyebrow="History"
           title={<>Your <i>activity</i>.</>}
-          sub={`All of your supplies, borrows, repays, withdraws, flash loans, and liquidations on ${chain.displayName}.`}
+          sub={`Supplies, borrows, repays, withdrawals, flash loans and liquidations ${NETWORK_ON}.`}
         />
 
         <div className="card" style={{ padding: 16, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <FilterPill label="Type" value={typeFilter} options={ACTION_OPTIONS} onChange={(v) => setTypeFilter(v as ActionFilter)} />
+          <FilterPill label="Type" value={typeFilter} options={ACTION_OPTIONS} labels={ACTION_LABELS} onChange={(v) => setTypeFilter(v as ActionFilter)} />
           <FilterPill label="Asset" value={assetFilter} options={symbolOptions} onChange={setAssetFilter} />
           <div style={{ flex: 1 }} />
           <span style={{ fontSize: 12, color: "var(--fg2)", fontFamily: "var(--font-mono)" }}>
@@ -153,13 +156,17 @@ export function HistoryContent() {
             icon={<IconAlert size={16} />}
             action={<Button variant="secondary" size="sm" onClick={() => void hist.refetch()}>Retry</Button>}
           >
-            History backend unreachable.
+            History unavailable.
           </Banner>
         ) : null}
 
-        {filtered.length === 0 ? (
+        {hist.isLoading ? (
+          <div className="card" data-testid="history-loading" role="status" aria-live="polite" style={{ padding: "48px 32px", textAlign: "center", color: "var(--fg2)", fontSize: 14 }}>
+            Loading your activity…
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="card" style={{ padding: "48px 32px", textAlign: "center", color: "var(--fg2)", fontSize: 14 }}>
-            No activity matches the current filters.
+            {rows.length > 0 ? "No activity matches." : "No activity."}
           </div>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
@@ -288,7 +295,7 @@ const HistoryRowItem = ({
     tone === "safe"   ? "var(--hf-safe-bg)"
     : tone === "warn"   ? "var(--hf-warn-bg)"
     : tone === "danger" ? "var(--hf-danger-bg)"
-    : tone === "brand"  ? "rgba(197, 139, 198, 0.10)"
+    : tone === "brand"  ? "color-mix(in srgb, var(--bridge) 12%, transparent)"
     : "var(--bg-surface-2)";
 
   const priceUsd = reserve?.priceUsd ?? 0;
@@ -322,15 +329,15 @@ const HistoryRowItem = ({
         <div>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
             <span style={{ color: "var(--fg1)", fontWeight: 500 }}>{meta.verb}</span>
-            <span className="mono tabular" style={{ color: "var(--fg1)" }}>{fmt.num(row.amount)} {row.symbol}</span>
-            <span style={{ color: "var(--fg2)", fontSize: 12 }}>· {fmt.usd(row.amount * priceUsd, { compact: true })}</span>
+            <span className="mono tabular" style={{ color: "var(--fg1)" }}>{fmtAmount(row.amount)} {row.symbol}</span>
+            <span style={{ color: "var(--fg2)", fontSize: 12 }}>· {fmtUsd(row.amount * priceUsd)}</span>
             {row.liqRole === "liquidator" ? <Tag tone="success">As liquidator</Tag> : null}
             {row.liqRole === "liquidatee" ? <Tag tone="danger">Liquidated</Tag> : null}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4, color: "var(--fg2)", fontSize: 11, flexWrap: "wrap" }}>
             <span>{row.time}</span>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-              EVM{" "}
+              Tx{" "}
               {evmExplorer ? (
                 <a
                   href={evmExplorer}
@@ -383,11 +390,13 @@ const FilterPill = ({
   label,
   value,
   options,
+  labels,
   onChange,
 }: {
   label: string;
   value: string;
   options: string[];
+  labels?: Record<string, string>;
   onChange: (v: string) => void;
 }) => {
   const [open, setOpen] = useState(false);
@@ -395,11 +404,9 @@ const FilterPill = ({
     <div style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
+        className="chip"
         onClick={() => setOpen((o) => !o)}
         style={{
-          background: "var(--bg-surface-2)",
-          border: "1px solid var(--border-default)",
-          borderRadius: "var(--r-pill)",
           padding: "5px 10px 5px 12px",
           color: "var(--fg1)",
           fontSize: 12,
@@ -411,7 +418,7 @@ const FilterPill = ({
         }}
       >
         <span style={{ color: "var(--fg2)", textTransform: "uppercase", letterSpacing: "0.06em", fontSize: 11 }}>{label}</span>
-        <span>{value}</span>
+        <span>{labels?.[value] ?? value}</span>
         <IconChevronDown size={12} />
       </button>
       {open ? (
@@ -425,7 +432,7 @@ const FilterPill = ({
           padding: 6,
           minWidth: 160,
           zIndex: 20,
-          boxShadow: "0 24px 48px -12px rgba(0,0,0,0.6)",
+          boxShadow: "var(--shadow-lg)",
         }}>
           {options.map((o) => (
             <button
@@ -444,7 +451,7 @@ const FilterPill = ({
                 cursor: "pointer",
               }}
             >
-              {o}
+              {labels?.[o] ?? o}
             </button>
           ))}
         </div>
@@ -474,7 +481,7 @@ const SolanaSigSummary = ({
       ) : (
         <span className="mono" style={{ color: "var(--fg3)" }}>…</span>
       )}{" "}
-      sigs
+      {data?.count === 1 ? "tx" : "txs"}
       <span style={{
         display: "inline-flex",
         transform: expanded ? "rotate(180deg)" : "none",
@@ -523,23 +530,21 @@ const SolanaSigPanel = ({
         alignItems: "center",
         gap: 8,
       }}>
-        Solana signatures
-        {data ? <span style={{ color: "var(--fg1)" }}>· {data.count} sigs</span> : null}
+        Solana transactions
+        {data ? <span style={{ color: "var(--fg1)" }}>· {data.count}</span> : null}
       </div>
 
       {isLoading ? (
-        <div style={{ color: "var(--fg2)" }}>Loading from rome-via…</div>
+        <div style={{ color: "var(--fg2)" }}>Loading…</div>
       ) : isError || !data ? (
         <div style={{ color: "var(--fg2)" }}>
-          Couldn&rsquo;t reach rome-via.{" "}
+          Can&rsquo;t load Solana transactions.{" "}
           <button
             type="button"
+            className="chip"
             onClick={() => void refetch()}
             style={{
-              background: "transparent",
-              border: "1px solid var(--border-default)",
-              color: "var(--fg-brand)",
-              borderRadius: "var(--r-pill)",
+              color: "var(--bridge)",
               padding: "2px 10px",
               fontSize: 11,
               cursor: "pointer",
@@ -550,7 +555,7 @@ const SolanaSigPanel = ({
         </div>
       ) : data.sigs.length === 0 ? (
         <div style={{ color: "var(--fg2)" }}>
-          No Solana sigs indexed for this tx yet — try again in a moment.
+          Not indexed yet. Try again shortly.
         </div>
       ) : (
         <ol style={{
@@ -596,7 +601,7 @@ const SolanaSigPanel = ({
                 ) : (
                   <span style={{ color: "var(--fg1)" }}>{leg.solSignature}</span>
                 )}
-                <span style={{ color: "var(--fg3)" }}>{leg.solChain}</span>
+                <span />
               </li>
             );
           })}

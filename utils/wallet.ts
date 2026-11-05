@@ -197,6 +197,10 @@ export const resolveKnownEvmWallet = (input: {
   );
 };
 
+/** The id of a connector's row in the wallet list: a known wallet's own id (EIP-6963 MetaMask -> "evm-metamask"), else the connector's id. */
+export const evmRowId = (connector: { id: string; name?: string }): string =>
+  resolveKnownEvmWallet({ id: connector.id, name: connector.name })?.id || connector.id;
+
 const getInjectedProviders = (win?: EthereumWindow): InjectedProvider[] => {
   const targetWindow = win ?? (typeof window !== 'undefined' ? (window as EthereumWindow) : undefined);
 

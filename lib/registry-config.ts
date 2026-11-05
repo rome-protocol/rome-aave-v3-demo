@@ -1,7 +1,6 @@
 // Registry config loader. For now reads from the vendored copies of
 // chains/<id-slug>/chain.json + apps/aave/<id-slug>.json. Once
-// @rome-protocol/registry v0.13.0 publishes, this swaps to
-// `import { getChain, getAaveDeployment } from "@rome-protocol/registry"`.
+// a registry package publishes this record, this swaps to a package import.
 
 import hadrian from "./aave-hadrian.json";
 import hadrianChainJson from "./hadrian-chain.json";
@@ -15,6 +14,7 @@ export interface ChainEntry {
   explorerUrl: string;          // canonical from chain.json — e.g. https://via-hadrian.testnet.romeprotocol.xyz/
   nativeCurrency: { name: string; symbol: string; decimals: number };
   status: "live" | "preparing" | "retired";
+  multicall3?: string;          // live Multicall3 from the registry's contracts.json
   solana?: { cluster: string; explorerUrl: string };
 }
 
@@ -29,6 +29,16 @@ const CHAINS: Record<number, ChainEntry> = {
 
 export function getChain(chainId: number): ChainEntry | undefined {
   return CHAINS[chainId];
+}
+
+// The bridge UI is not in the vendored registry snapshot, so its URL lives here.
+const BRIDGE_UI_URLS: Record<number, string> = {
+  [hadrianChainJson.chainId]: "https://bridge-api.devnet.romeprotocol.xyz",
+};
+
+/** Bridge UI URL for a chain ("" when none). */
+export function bridgeUiUrl(chainId: number): string {
+  return BRIDGE_UI_URLS[chainId] ?? "";
 }
 
 /** Block-explorer URL for an EVM tx hash on the given chain. Strips trailing slash. */
@@ -49,6 +59,20 @@ export function solanaExplorerTxUrl(chainId: number, sig: string): string | unde
   return `${base}/tx/${sig}?cluster=${c.solana.cluster}`;
 }
 
+/** Block-explorer page of an EVM address on the given chain. */
+export function evmExplorerAddressUrl(chainId: number, address: string): string | undefined {
+  const c = getChain(chainId);
+  if (!c) return undefined;
+  return `${c.explorerUrl.replace(/\/$/, "")}/address/${address}`;
+}
+
+/** Solana explorer page of a public key on the chain's anchored cluster. */
+export function solanaExplorerAddressUrl(chainId: number, key: string): string | undefined {
+  const c = getChain(chainId);
+  if (!c?.solana) return undefined;
+  return `${c.solana.explorerUrl.replace(/\/$/, "")}/address/${key}?cluster=${c.solana.cluster}`;
+}
+
 /** rome-via API base for a chain — the explorerUrl + /api/v1. */
 export function romeViaApiBase(chainId: number): string | undefined {
   const c = getChain(chainId);
@@ -63,7 +87,7 @@ export interface AaveReserveEntry {
   aToken: string;
   variableDebtToken: string;
   priceFeed: string;
-  priceFeedKind: "pyth-pull" | "switchboard-v3" | "chainlink" | "mock-aggregator";
+  priceFeedKind: "pyth-pull" | "switchboard-v3" | "chainlink" | "mock-aggregator" | "price-book-shim" | "price-book-entry-shim";
   decimals: number;
   ltv: number;
   liquidationThreshold: number;
@@ -80,6 +104,8 @@ export interface AaveDeployment {
   poolConfigurator: string;
   aclManager: string;
   oracle: string;
+  oracleKind?: "aave-oracle" | "rome-price-oracle";
+  aaveOracle?: string | null;
   poolDataProvider: string;
   treasury: string | null;
   uiPoolDataProviderV3: string | null;
@@ -92,28 +118,16 @@ export interface AaveDeployment {
     variableRateSlope2: number;
   };
   reserves: AaveReserveEntry[];
-  faucet?: AaveFaucetEntry;
   jito: { enabled: boolean; reason?: string; endpoint?: string | null };
   ux: { singleTxFlows: string[]; bundleFlows: string[]; fallbackFlows: string[] };
   demoUrl: string;
   rpcRef: string;
   deployedAt: string;
-  sourceCommits?: Record<string, string>;
+  sourceCommits: Record<string, string>;
   status: "live" | "retired" | "draft";
   notes?: string;
 }
 
-export interface AaveFaucetEntry {
-  address: string;
-  /** Native gas dropped per claim, in wei (decimal string for big-int safety). */
-  gasDropWei: string;
-  tokens: Array<{
-    symbol: string;
-    address: string;
-    /** Raw token-unit drop per claim (decimal string). */
-    dropAmountWei: string;
-  }>;
-}
 
 const DEPLOYMENTS: Record<number, AaveDeployment> = {
   [hadrian.chainId]: hadrian as AaveDeployment,

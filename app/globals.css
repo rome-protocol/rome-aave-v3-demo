@@ -1,9 +1,239 @@
-/* Globals — the design ships its own styles.css with @font-face + CSS vars
-   served from /public/styles.css via a <link> tag in layout.tsx. This file
-   stays empty for now; Tailwind is not used (the design uses inline styles
-   + CSS variables exclusively). */
+/* Base sheet of the Rome app look (the Rome app UI guide, section 9, steps 1 and 2).
+   Taken from the Rome DEX app so theme.css, which only recolours and reshapes these classes, can be the
+   DEX's file unchanged. Order of the sheets (app/layout.tsx): styles.css (this app's own tokens and table rules), this file, theme.css,
+   aave-look.css. Layout stays with the components (inline sizes and padding); these rules carry the shape of each class and nothing the
+   components already set. */
+
+/* Brand fonts, self-hosted from public/fonts: Untitled Sans, Untitled Serif, IBM Plex Mono. */
+@font-face { font-family:'Untitled Serif'; font-style:normal; font-weight:400; src:url('/fonts/UntitledSerif-Regular.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Serif'; font-style:italic; font-weight:400; src:url('/fonts/UntitledSerif-RegularItalic.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Serif'; font-style:normal; font-weight:500; src:url('/fonts/UntitledSerif-Medium.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Sans'; font-style:normal; font-weight:300; src:url('/fonts/UntitledSans-Light.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Sans'; font-style:normal; font-weight:400; src:url('/fonts/UntitledSans-Regular.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Sans'; font-style:normal; font-weight:500; src:url('/fonts/UntitledSans-Medium.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Sans'; font-style:normal; font-weight:700; src:url('/fonts/UntitledSans-Bold.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:400; src:url('/fonts/IBMPlexMono-Regular.ttf') format('truetype'); font-display:swap; }
+@font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:500; src:url('/fonts/IBMPlexMono-Medium.ttf') format('truetype'); font-display:swap; }
+@font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:600; src:url('/fonts/IBMPlexMono-SemiBold.ttf') format('truetype'); font-display:swap; }
+@font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:700; src:url('/fonts/IBMPlexMono-Bold.ttf') format('truetype'); font-display:swap; }
+
+/* The DEX's tokens. The colours are only the defaults a page gets without a theme (no script); theme.css sets every colour and radius for the two palettes. */
+:root {
+  --ground:#130117; --panel:#1E0A26; --panel-2:#2A1234; --panel-3:#341844;
+  --line:rgba(255,255,255,.11); --line-2:rgba(255,255,255,.06);
+  --ink:#F4ECF5; --muted:#A692AE; --faint:#6E5A78;
+  --evm:#52A6DE; --evm-dim:rgba(82,166,222,.14); --evm-line:rgba(82,166,222,.35);
+  --sol:#CB6BD0; --sol-dim:rgba(203,107,208,.14); --sol-line:rgba(203,107,208,.35);
+  --bridge:#B45CE6; --bridge-2:#8A3FB0;
+  --up:#21C08A; --up-dim:rgba(33,192,138,.14); --down:#F0616A; --down-dim:rgba(240,97,106,.14);
+  --warn:#E8A33D;
+
+  --serif:"Untitled Serif","Literata",Georgia,serif;
+  --sans:"Untitled Sans","DM Sans",system-ui,-apple-system,"Helvetica Neue",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
+  --ease:cubic-bezier(.2,.8,.2,1);
+}
 
 html, body { margin: 0; padding: 0; }
 
 /* Shared spinner keyframe (WalletModal connecting state, etc.). */
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* ─── shared atoms (the DEX's rules; size and spacing come from the components) ─── */
+.card { background:var(--panel); border:1px solid var(--line); border-radius:16px; box-shadow:inset 0 1px 0 rgba(255,255,255,.035), 0 10px 30px -22px rgba(0,0,0,.7); transition:border-color .16s var(--ease); }
+
+.btn { border:0; border-radius:999px; font-weight:500; color:#fff; background:linear-gradient(180deg,var(--bridge),var(--bridge-2)); transition:filter .16s var(--ease), transform .05s; }
+.btn:hover { filter:brightness(1.08); }
+.btn:active { transform:translateY(1px); }
+.btn:disabled { opacity:.5; cursor:not-allowed; }
+.btn.block { width:100%; }
+.btn.ghost { background:var(--panel-2); color:var(--ink); border:1px solid var(--line); }
+.btn.ghost:hover { background:var(--panel-3); filter:none; }
+.connect-btn { white-space:nowrap; }
+
+.seg { display:inline-flex; background:var(--panel-2); border:1px solid var(--line); border-radius:10px; padding:3px; }
+.seg button { background:none; border:0; color:var(--muted); font-size:14px; font-weight:600; padding:9px 14px; border-radius:8px; }
+.seg button[aria-selected="true"] { background:var(--panel-3); color:var(--ink); }
+.seg-ctrl { display:flex; background:var(--panel-2); border:1px solid var(--line); border-radius:999px; padding:3px; gap:2px; }
+.seg-ctrl .seg { font-family:var(--mono); font-size:12.5px; letter-spacing:.06em; text-transform:uppercase; padding:8px 17px; border-radius:999px; border:none; background:transparent; color:var(--muted); cursor:pointer; white-space:nowrap; display:inline; }
+.seg-ctrl .seg.on { background:var(--panel-3); color:var(--ink); }
+
+/* Page links in the header */
+.tabs { display:flex; gap:2px; }
+.tabs a { font:inherit; font-size:14.5px; color:var(--muted); background:none; border:0; padding:9px 15px; border-radius:9px; font-weight:500; text-decoration:none; }
+.tabs a:hover { color:var(--ink); background:var(--line-2); }
+.tabs a[aria-current="true"] { color:var(--ink); background:var(--panel-2); font-weight:600; }
+
+/* The pills in the header: the chain and the connected wallet (size and spacing come from the components) */
+.wpill { background:var(--panel); border:1px solid var(--line); color:var(--ink); white-space:nowrap; }
+.wpill:hover { border-color:var(--bridge); }
+
+/* The lit line across the top of the page */
+.thread { height:2px; background:linear-gradient(90deg,var(--evm),var(--bridge),var(--sol)); }
+
+/* Header menu button and its popover (the Theme choice opens in it) */
+.account-root { position:relative; }
+.menu-btn { width:40px; height:40px; display:inline-flex; align-items:center; justify-content:center; padding:0; border-radius:11px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); }
+.menu-btn:hover, .menu-btn:focus-visible { border-color:var(--bridge); }
+.menu-btn svg { fill:none; stroke:currentColor; stroke-width:1.8; stroke-linecap:round; }
+.account-menu { position:absolute; right:0; top:calc(100% + 8px); z-index:80; min-width:260px; background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:12px; box-shadow:0 18px 48px rgba(0,0,0,.45); display:flex; flex-direction:column; gap:10px; }
+
+/* One field language: the standalone input and the amount box (a wrapper whose input is bare) */
+.in { width:100%; padding:13px 15px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font:inherit; font-size:15.5px; outline:none; transition:border-color .16s var(--ease); }
+.in:hover { border-color:rgba(255,255,255,.22); }
+.in:focus { border-color:var(--bridge); }
+.in::placeholder { color:var(--faint); }
+.amount-row { border:1px solid var(--line); border-radius:14px; background:var(--panel-2); transition:border-color .16s; }
+.amount-row:focus-within { border-color:var(--bridge); }
+
+.chip { font-family:var(--mono); border-radius:999px; border:1px solid var(--line); background:var(--panel-2); color:var(--muted); cursor:pointer; white-space:nowrap; }
+.chip:hover { border-color:var(--bridge); color:var(--ink); }
+.chip:disabled { opacity:.5; cursor:not-allowed; }
+
+/* Stat figure: the number in a stat block (size is set by the component) */
+.stat .v { font-family:var(--mono); font-weight:600; letter-spacing:-.02em; }
+
+.note { font-size:14.5px; line-height:1.55; border-radius:12px; background:var(--panel-2); color:var(--muted); border:1px solid var(--line); overflow-wrap:anywhere; }
+.note.ok { background:var(--up-dim); border-color:var(--up-line,rgba(33,192,138,.35)); color:var(--up); }
+.note.err { background:var(--down-dim); border-color:rgba(240,97,106,.35); color:var(--down); }
+
+/* One tooltip, in place of the browser's own balloon (components/Tip.tsx; the bubble's colours come from theme.css .tip-bubble). */
+.tip { position:relative; display:inline-flex; }
+.tip-block { display:block; }
+.tip-bubble { position:absolute; z-index:60; bottom:calc(100% + 8px); width:max-content; max-width:min(260px,80vw); padding:8px 11px; border-radius:9px; background:var(--panel-3); border:1px solid var(--line); color:var(--ink); font-family:var(--sans); font-size:13px; font-weight:400; line-height:1.45; letter-spacing:0; text-transform:none; white-space:normal; text-align:left; box-shadow:0 10px 28px rgba(0,0,0,.45); pointer-events:none; overflow-wrap:anywhere; }
+.tip-below { top:calc(100% + 8px); bottom:auto; }
+.tip-center { left:50%; transform:translateX(-50%); } .tip-start { left:0; } .tip-end { right:0; }
+.tip-cue > :first-child { text-decoration:underline dotted; text-decoration-thickness:1px; text-underline-offset:4px; text-decoration-color:color-mix(in srgb, currentColor 38%, transparent); }
+.hint { display:inline-flex; align-items:center; justify-content:center; width:15px; height:15px; margin-left:6px; border-radius:999px; border:1px solid var(--line); color:var(--muted); font-family:var(--mono); font-size:10px; line-height:1; cursor:help; vertical-align:middle; }
+.hint:hover { border-color:var(--bridge); color:var(--ink); }
+.tip:focus-visible { outline:2px solid var(--bridge); outline-offset:2px; border-radius:999px; }
+
+/* Phone width: the markets table keeps Asset, Supplied and Borrowed (each with its APY underneath); the split breaks onto lines. */
+.show-sm { display: none; }
+.show-sm-inline { display: none; }
+.liq-act { width: 160px; }
+@media (max-width: 639px) {
+  .show-sm-inline { display: inline; }
+  /* The Liquidate table keeps its action on the first screen: no fixed column, a tighter debt cell. */
+  .liq-act { width: auto; }
+  .liq-table .hf-word { display: none; }
+  .compact-table.liq-table th, .compact-table.liq-table td { padding-left: 5px; padding-right: 5px; }
+  .liq-act button { white-space: nowrap; }
+  .liq-act div { white-space: normal; max-width: 84px; margin-left: auto; }
+  .liq-cd { gap: 6px !important; } .liq-cd .sym-label { display: none !important; }
+  .liq-act button { padding-left: 10px; padding-right: 10px; }
+  .hide-sm { display: none !important; }
+  .show-sm { display: block; }
+  .split > span { display: block; }
+  .split .split-sep { display: none; }
+  .compact-table th, .compact-table td { padding-left: 8px; padding-right: 8px; }
+}
+
+/* ─── the header, the wallet pill and menu, the chooser and the one dialog ─── */
+.top { background:var(--header-bg); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border-bottom:1px solid var(--line); }
+.nav { display:flex; align-items:center; gap:20px; padding:14px 0; }
+.mark { display:flex; align-items:center; gap:12px; flex-shrink:0; text-decoration:none; }
+.mark-sep { width:1px; height:24px; background:var(--line); }
+.mark-name { font-family:var(--serif); font-size:26px; line-height:1; color:var(--ink); }
+.rightnav { margin-left:auto; display:flex; align-items:center; gap:8px; }
+.wpill.on { display:flex; align-items:center; gap:7px; height:40px; padding:0 15px; border-radius:999px; font-size:13.5px; font-weight:600; }
+.wpill .caret { color:var(--muted); }
+.connect-btn { height:40px; padding:0 18px; font-size:14px; border-radius:999px; display:inline-flex; align-items:center; justify-content:center; line-height:1; white-space:nowrap; }
+/* A header control that is still being read (the remembered wallet is being restored): a grey pill of the same size. */
+.wpill-skel { display:inline-block; width:128px; background:var(--panel-2); border:1px solid var(--line); opacity:.7; animation:skelpulse 1.2s ease-in-out infinite; }
+@keyframes skelpulse { 50% { opacity:.4; } }
+@media (prefers-reduced-motion: reduce) { .wpill-skel { animation:none; } }
+
+/* A wallet's logo; a wallet with none gets the wallet glyph in a square tinted by its kind (in the palette's own ink, so it shows on both). */
+.wmark { border-radius:8px; object-fit:cover; flex:0 0 auto; }
+.wmark-fallback { display:inline-flex; align-items:center; justify-content:center; }
+.wmark-fallback.evm { color:var(--evm); background:var(--evm-dim); }
+.wmark-fallback.sol { color:var(--sol); background:var(--sol-dim); }
+.wpill .wmark { border-radius:50%; }
+
+/* The account menu */
+.account-menu { width:min(320px, calc(100vw - 32px)); min-width:280px; padding:8px; gap:2px; }
+.am-head { display:flex; align-items:center; gap:12px; padding:10px 10px 8px; }
+.am-who { display:flex; flex-direction:column; min-width:0; line-height:1.3; }
+.am-name { font-weight:600; font-size:15px; }
+.am-sub { color:var(--muted); font-size:12.5px; }
+.am-addr { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:2px 6px 8px; padding:9px 10px 9px 12px; border-radius:10px; background:var(--panel-2); border:1px solid var(--line-2); font-size:13.5px; }
+.am-addr-btns { display:inline-flex; gap:6px; }
+.am-icon { width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; padding:0; border-radius:8px; border:1px solid var(--line); background:var(--panel); color:var(--muted); }
+.am-icon:hover, .am-icon:focus-visible { border-color:var(--bridge); color:var(--ink); outline:none; }
+.am-item { display:flex; align-items:center; justify-content:space-between; gap:10px; width:100%; padding:11px 12px; border:0; border-radius:9px; background:transparent; color:var(--ink); font:inherit; font-size:14.5px; text-align:left; cursor:pointer; }
+.am-item:hover, .am-item:focus-visible { background:var(--line-2); outline:none; }
+.am-item svg { color:var(--muted); }
+.am-out, .am-out svg { color:var(--down); }
+.warn-dot { width:8px; height:8px; border-radius:50%; background:var(--warn); flex:none; }
+.am-warn { display:flex; flex-direction:column; gap:8px; margin:6px 0; padding:10px 12px; border-radius:12px; border:1px solid var(--warn); color:var(--warn); font-size:13.5px; line-height:1.45; }
+.am-warn .btn { align-self:flex-start; padding:8px 14px; font-size:13.5px; }
+
+/* The wallet chooser rows: logo, name and where it was found, what a tap does. */
+.chooser-group { margin-top:14px; }
+.chooser-group:first-of-type { margin-top:0; }
+.chooser-group .eyebrow { margin-bottom:6px; }
+.chooser-item { display:flex; align-items:center; gap:10px; width:100%; padding:12px 14px; margin-top:6px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font:inherit; font-size:15px; font-weight:600; cursor:pointer; text-align:left; text-decoration:none; }
+.chooser-item:hover { border-color:var(--bridge); }
+.chooser-item:disabled { opacity:.6; cursor:default; }
+.ci-text { display:flex; flex-direction:column; min-width:0; flex:1; line-height:1.3; }
+.ci-name { font-size:15.5px; font-weight:600; }
+.ci-sub { font-size:12.5px; font-weight:400; color:var(--muted); }
+.ci-chev { color:var(--muted); }
+.ci-act { display:inline-flex; align-items:center; gap:5px; font-size:13.5px; font-weight:600; color:var(--bridge); }
+.ci-act.ci-out { color:var(--down); }
+
+/* The one dialog: serif title left, a square close button right (components/Dialog.tsx) */
+.confirm-modal-overlay { position:fixed; inset:0; background:rgba(9,0,12,.66); backdrop-filter:blur(3px); display:flex; align-items:center; justify-content:center; z-index:1000; padding:24px; }
+.confirm-modal { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:24px; width:100%; max-width:420px; box-shadow:0 24px 64px rgba(0,0,0,.5); }
+.dlg { outline:none; }
+.dlg-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+.dlg-title { display:flex; align-items:center; gap:12px; min-width:0; }
+.dlg-icon { display:inline-flex; flex:0 0 auto; }
+.confirm-modal.dlg h3 { min-width:0; overflow-wrap:anywhere; font-family:var(--serif); font-weight:400; font-size:24px; letter-spacing:-.01em; margin:0; line-height:1.2; }
+.dlg-close { width:34px; height:34px; flex:0 0 auto; display:inline-flex; align-items:center; justify-content:center; padding:0; border-radius:9px; border:1px solid var(--line); background:var(--panel-2); color:var(--muted); cursor:pointer; }
+.dlg-close:hover, .dlg-close:focus-visible { border-color:var(--bridge); color:var(--ink); outline:none; }
+.confirm-modal.dlg { max-height:calc(100dvh - 48px); overflow-y:auto; }
+
+/* Header on a phone: the brand shows the bowtie and the name, the account pill keeps a lane dot (the wallet's logo is in the menu head). */
+@media (max-width:720px) {
+  .nav { gap:8px; }
+  .mark { gap:10px; }
+  .mark-name { font-size:21px; }
+  .connect-btn { padding:0 12px; font-size:13px; }
+  .wpill.on { padding:0 11px; }
+  .account-root { position:static; }
+  /* Anchored to the header row (not the whole sticky header), so a banner below the row never pushes the menu down. */
+  .hdr-row { position:relative; }
+  .account-menu { right:0; top:calc(100% - 2px); }
+}
+@media (max-width:520px) {
+  .mark .hdr-wordmark, .mark-sep { display:none !important; }
+  .wpill .wmark { display:none; }
+  .wpill.on::before { content:""; width:7px; height:7px; border-radius:50%; flex:0 0 auto; }
+  .wpill.evm.on::before { background:var(--evm); box-shadow:0 0 6px var(--evm); }
+  .wpill.sol.on::before { background:var(--sol); box-shadow:0 0 6px var(--sol); }
+}
+@media (max-width:388px) { .mark-name { display:none; } }
+@media (max-width:433px) {
+  .nav { gap:6px; }
+  .rightnav { gap:4px; }
+  .connect-btn, .wpill.on { height:36px; padding:0 9px; font-size:12.5px; }
+  .wpill.on { gap:5px; }
+  .wpill .caret { display:none; }
+  .menu-btn { width:36px; height:36px; }
+  .wpill-skel { width:96px; }
+}
+@media (max-width:360px) {
+  .confirm-modal-overlay { padding:8px; }
+  .confirm-modal { padding:16px 14px; border-radius:14px; }
+  .confirm-modal.dlg { max-height:calc(100dvh - 16px); }
+  .dlg-head { margin-bottom:14px; }
+  .confirm-modal.dlg h3 { font-size:21px; }
+}
+@media (max-width:340px) { .nav { gap:4px; } .rightnav { gap:2px; } .menu-btn { width:32px; height:36px; } }
+/* Phone header controls draw at 36 px but take a 44 px touch: the hit area grows, the drawn size does not. */
+@media (max-width:433px) {
+  .menu-btn, .connect-btn, .wpill.on { position:relative; }
+  .menu-btn::before, .connect-btn::before, .wpill.on::after { content:""; position:absolute; left:-2px; right:-2px; top:50%; height:44px; transform:translateY(-50%); }
+}

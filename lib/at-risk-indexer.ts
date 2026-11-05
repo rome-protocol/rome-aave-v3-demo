@@ -3,31 +3,35 @@
 // Architecture:
 // 1. Maintain a process-wide cache per chain: { borrowers: Set, lastBlock }.
 //    Borrowers come from Pool.Borrow events (indexed topic 2 = onBehalfOf).
-// 2. On each /api/at-risk request, top up the borrower set with new
-//    Borrow events since lastBlock, then call Pool.getUserAccountData for
-//    every known borrower in a small concurrent batch.
-// 3. Filter to HF ≤ HF_THRESHOLD, decorate each with the borrower's
-//    biggest collat + biggest variable debt position via
-//    UiPoolDataProviderV3.getUserReservesData.
-// 4. TTL the decorated result (the expensive part) for 12s so a busy
-//    page doesn't refetch every render. The borrower set itself is
-//    append-only — re-scans are cheap.
+// 2. A warm feed per chain (lib/warm-feed.ts) rebuilds the list in the background every
+//    REFRESH_MS: top up the borrower set, read Pool.getUserAccountData for every borrower through
+//    Multicall3, then UiPoolDataProviderV3.getUserReservesData (also batched) only for borrowers
+//    with HF <= HF_CEILING.
+// 3. A request answers from the warm list at once; only the very first one waits for a build.
+//    After a liquidation the page asks for one borrower to be re-read (`refresh`), which patches that row.
 //
 // Scope notes:
-// - HF_THRESHOLD includes the buffer zone (1.0-1.05) the design surfaces
-//   so users see positions trending toward unsafe; the row's "Liquidate"
-//   button at the UI layer disables when HF >= 1.
-// - eth_getLogs is bounded to BLOCK_SCAN_CHUNK so we never request a
-//   range the Rome RPC will reject. Index since deployedAt is sliced
-//   automatically.
+// - HF_CEILING is the widest band the feed carries (the page filters it down);
+//   the row's "Liquidate" button at the UI layer is enabled only when HF < 1.
+// - The borrower scan starts at the pool's deploy block and uses address-filtered
+//   eth_getLogs windows of at most SCAN_WINDOW blocks (inclusive); the Hadrian
+//   proxy refuses wider ranges. Concurrent requests share one in-flight scan.
+// - A failed read (including a contract revert) keeps the borrower's last good row and is retried;
+//   only a definite answer (repaid, above the ceiling, no debt) drops a row (see at-risk-refresh.ts).
+//   `stale` counts the rows that are kept from an earlier build.
 
-import { createPublicClient, http, defineChain, parseAbiItem, type Address, type PublicClient } from "viem";
+import { createPublicClient, http, defineChain, parseAbi, parseAbiItem, encodeFunctionData, decodeFunctionResult, type Address, type Hex, type PublicClient } from "viem";
 import { getAaveDeployment, getChain } from "./registry-config";
 import { PoolAbi, UiPoolDataProviderV3Abi } from "./abi";
+import { blockWindows, refreshRowsBatched, type Read } from "./at-risk-refresh";
+import { POOL_DEPLOY_BLOCK } from "./pool-deploy-block";
+import { createWarmFeed, type WarmFeed } from "./warm-feed";
 
-const HF_THRESHOLD = 1.05;
-const BLOCK_SCAN_CHUNK = 5_000n;
-const DECORATE_CACHE_MS = 6_000;
+const HF_CEILING = 2;
+const SCAN_WINDOW = 1_000_000n;
+const REFRESH_MS = 15_000;
+const BATCH_SIZE = 20;
+const MulticallAbi = parseAbi(["function aggregate3((address target, bool allowFailure, bytes callData)[] calls) payable returns ((bool success, bytes returnData)[] returnData)"]);
 const RAY = 10n ** 27n;
 
 interface IndexerState {
@@ -37,21 +41,23 @@ interface IndexerState {
 
 const STATE_BY_CHAIN = new Map<number, IndexerState>();
 
-interface DecorateCacheEntry {
-  rows: AtRiskRow[];
-  generatedAt: number;
-  scannedBlock: string;
-}
-const DECORATE_CACHE = new Map<number, DecorateCacheEntry>();
+// Last good row per borrower, per chain: survives a failed read.
+const LAST_GOOD = new Map<number, Map<string, AtRiskRow>>();
 
 export interface AtRiskRow {
   borrower: string;
   hf: number;
   collatSym: string;
   collatUsd: number;
-  debtSym: string;
-  debtUsd: number;
+  debtSym: string; // the borrower's largest debt asset
+  debtUsd: number; // total debt, all assets
+  debtAssetUsd: number; // debt in debtSym only
   bonusPct: number; // collateral reserve's liquidationBonus, as a fraction (0.05 = 5%)
+}
+
+/** True when the registry snapshot knows the chain and its Aave deployment. */
+export function isSupportedChain(chainId: number): boolean {
+  return !!getChain(chainId) && !!getAaveDeployment(chainId);
 }
 
 function clientFor(chainId: number): PublicClient {
@@ -66,49 +72,52 @@ function clientFor(chainId: number): PublicClient {
   return createPublicClient({ chain: viemChain, transport: http(c.rpcUrl) }) as PublicClient;
 }
 
-async function _scanBorrowEvents(client: PublicClient, pool: Address, fromBlock: bigint, toBlock: bigint): Promise<Set<string>> {
-  const found = new Set<string>();
-  for (let start = fromBlock; start <= toBlock; start += BLOCK_SCAN_CHUNK) {
-    const end = start + BLOCK_SCAN_CHUNK - 1n > toBlock ? toBlock : start + BLOCK_SCAN_CHUNK - 1n;
-    const logs = await client.getLogs({
-      address: pool,
-      event: parseAbiItem(
-        "event Borrow(address indexed reserve, address user, address indexed onBehalfOf, uint256 amount, uint8 interestRateMode, uint256 borrowRate, uint16 indexed referralCode)",
-      ),
-      fromBlock: start,
-      toBlock: end,
-    });
-    for (const log of logs) {
-      const onBehalfOf = (log.args as { onBehalfOf?: string })?.onBehalfOf;
-      if (onBehalfOf) found.add(onBehalfOf.toLowerCase());
-    }
-  }
-  return found;
+const BORROW_EVENT = parseAbiItem(
+  "event Borrow(address indexed reserve, address user, address indexed onBehalfOf, uint256 amount, uint8 interestRateMode, uint256 borrowRate, uint16 indexed referralCode)",
+);
+
+/** Last block the at-risk indexer has scanned (0 before the first scan). For /api/status. */
+export function getAtRiskLastScannedBlock(chainId: number): bigint {
+  return STATE_BY_CHAIN.get(chainId)?.lastScannedBlock ?? 0n;
 }
 
-async function _ensureState(chainId: number): Promise<IndexerState> {
+function _ensureState(chainId: number): IndexerState {
   let state = STATE_BY_CHAIN.get(chainId);
-  if (state) return state;
-  // First-time: scan from chain genesis (or the Aave deploy block if we
-  // ever index it in the registry — for now genesis is fine, Hadrian is
-  // fresh and the scan is bounded by BLOCK_SCAN_CHUNK steps).
-  state = { borrowers: new Set(), lastScannedBlock: 0n };
-  STATE_BY_CHAIN.set(chainId, state);
+  if (!state) {
+    // lastScannedBlock is the last block fully scanned; start just before the pool's deploy block.
+    state = { borrowers: new Set(), lastScannedBlock: POOL_DEPLOY_BLOCK - 1n };
+    STATE_BY_CHAIN.set(chainId, state);
+  }
   return state;
 }
 
-async function _topUpBorrowers(chainId: number): Promise<IndexerState> {
-  const state = await _ensureState(chainId);
+// One scan per chain at a time: concurrent requests await the same promise.
+const SCAN_IN_FLIGHT = new Map<number, Promise<IndexerState>>();
+
+function _topUpBorrowers(chainId: number): Promise<IndexerState> {
+  let p = SCAN_IN_FLIGHT.get(chainId);
+  if (!p) {
+    p = _scan(chainId).finally(() => SCAN_IN_FLIGHT.delete(chainId));
+    SCAN_IN_FLIGHT.set(chainId, p);
+  }
+  return p;
+}
+
+async function _scan(chainId: number): Promise<IndexerState> {
+  const state = _ensureState(chainId);
   const dep = getAaveDeployment(chainId);
   if (!dep) throw new Error(`No Aave deployment for chain ${chainId}`);
   const client = clientFor(chainId);
   const currentBlock = await client.getBlockNumber();
-  if (state.lastScannedBlock >= currentBlock) return state;
-
-  const from = state.lastScannedBlock === 0n ? 0n : state.lastScannedBlock + 1n;
-  const newBorrowers = await _scanBorrowEvents(client, dep.pool as Address, from, currentBlock);
-  for (const b of newBorrowers) state.borrowers.add(b);
-  state.lastScannedBlock = currentBlock;
+  // Progress is saved after every window, so a failure keeps what was already scanned.
+  for (const [from, to] of blockWindows(state.lastScannedBlock + 1n, currentBlock, SCAN_WINDOW)) {
+    const logs = await client.getLogs({ address: dep.pool as Address, event: BORROW_EVENT, fromBlock: from, toBlock: to });
+    for (const log of logs) {
+      const onBehalfOf = (log.args as { onBehalfOf?: string })?.onBehalfOf;
+      if (onBehalfOf) state.borrowers.add(onBehalfOf.toLowerCase());
+    }
+    state.lastScannedBlock = to;
+  }
   return state;
 }
 
@@ -131,9 +140,10 @@ function _summarizePositions(
     string,
     { decimals: number; liquidityIndex: bigint; variableBorrowIndex: bigint; priceInRef: bigint; refUnit: bigint; displaySymbol: string; liqBonusBps: number }
   >,
-): { collatSym: string; collatUsd: number; debtSym: string; debtUsd: number; bonusPct: number } | null {
+): { collatSym: string; collatUsd: number; debtSym: string; debtUsd: number; debtAssetUsd: number; bonusPct: number } | null {
   let bestCollat: { sym: string; usd: number; bonusPct: number } | null = null;
   let bestDebt: { sym: string; usd: number } | null = null;
+  let totalDebtUsd = 0;
 
   for (const ur of userReserves) {
     const meta = reservesByAddr.get(ur.underlyingAsset.toLowerCase());
@@ -160,6 +170,7 @@ function _summarizePositions(
       const tokens = Number((ur.scaledVariableDebt * meta.variableBorrowIndex) / RAY) / denom;
       const refUnit = Number(meta.refUnit);
       const usd = refUnit > 0 ? (tokens * Number(meta.priceInRef)) / refUnit : 0;
+      totalDebtUsd += usd;
       if (!bestDebt || usd > bestDebt.usd) {
         bestDebt = { sym: meta.displaySymbol, usd };
       }
@@ -171,43 +182,49 @@ function _summarizePositions(
     collatSym: bestCollat?.sym ?? "—",
     collatUsd: bestCollat?.usd ?? 0,
     debtSym: bestDebt.sym,
-    debtUsd: bestDebt.usd,
+    debtUsd: totalDebtUsd,
+    debtAssetUsd: bestDebt.usd,
     bonusPct: bestCollat?.bonusPct ?? 0,
   };
 }
 
-export async function loadAtRiskFeed(chainId: number, opts: { hfMax?: number } = {}): Promise<{
-  rows: AtRiskRow[];
-  generatedAt: string;
-  scannedBlock: string;
-  borrowerCount: number;
-}> {
-  const hfMax = opts.hfMax ?? HF_THRESHOLD;
+type FeedResult = { rows: AtRiskRow[]; scannedBlock: string; borrowerCount: number; stale: number };
+type ReserveInfo = { decimals: number; liquidityIndex: bigint; variableBorrowIndex: bigint; priceInRef: bigint; refUnit: bigint; displaySymbol: string; liqBonusBps: number };
+type ReserveMeta = Map<string, ReserveInfo>;
+type UserReserves = Parameters<typeof _summarizePositions>[0];
 
-  // TTL cache the decorated result. Borrower set top-ups still happen on
-  // every request — that piece is bounded by getLogs + cheap, and we want
-  // to catch fresh borrowers immediately. The expensive part is the
-  // per-borrower getUserAccountData + getUserReservesData fan-out, which
-  // is what the TTL guards.
-  const cached = DECORATE_CACHE.get(chainId);
-  if (cached && Date.now() - cached.generatedAt < DECORATE_CACHE_MS) {
-    return {
-      rows: cached.rows.filter((r) => r.hf <= hfMax),
-      generatedAt: new Date(cached.generatedAt).toISOString(),
-      scannedBlock: cached.scannedBlock,
-      borrowerCount: STATE_BY_CHAIN.get(chainId)?.borrowers.size ?? 0,
-    };
-  }
+const WARM = new Map<number, WarmFeed<FeedResult>>();
+// Reserve metadata from the last build; a single-borrower re-read reuses it.
+const RESERVES = new Map<number, ReserveMeta>();
 
+/** Several eth_calls in one: results line up with `calls`; a failed sub-call has success=false. */
+async function multicall(chainId: number, client: PublicClient, calls: Array<{ target: Address; callData: Hex }>): Promise<Array<{ success: boolean; returnData: Hex }>> {
+  const address = getChain(chainId)?.multicall3;
+  if (!address) throw new Error(`No Multicall3 for chain ${chainId}`);
+  return (await client.readContract({
+    address: address as Address,
+    abi: MulticallAbi,
+    functionName: "aggregate3",
+    args: [calls.map((c) => ({ ...c, allowFailure: true }))],
+  })) as unknown as Array<{ success: boolean; returnData: Hex }>;
+}
+
+function decodeEach<T>(results: Array<{ success: boolean; returnData: Hex }>, decode: (data: Hex) => T): Array<Read<T>> {
+  return results.map((r): Read<T> => {
+    if (!r.success) return { ok: false };
+    try {
+      return { ok: true, value: decode(r.returnData) };
+    } catch {
+      return { ok: false };
+    }
+  });
+}
+
+async function readReserves(chainId: number, client: PublicClient): Promise<ReserveMeta> {
   const dep = getAaveDeployment(chainId);
   if (!dep) throw new Error(`No Aave deployment for chain ${chainId}`);
   if (!dep.uiPoolDataProviderV3) throw new Error("UiPoolDataProviderV3 not deployed");
-  const client = clientFor(chainId);
-
-  // Build the reserve metadata index once per refresh. getReservesData
-  // returns [reserves[], baseCurrencyInfo] — destructure BOTH from a single
-  // call (a prior version fetched it twice, doubling the round-trip and
-  // risking a split-block snapshot between the two reads).
+  // getReservesData returns [reserves[], baseCurrencyInfo]; one call, so both come from the same block.
   const [reservesData, baseCurrencyInfo] = (await client.readContract({
     address: dep.uiPoolDataProviderV3 as Address,
     abi: UiPoolDataProviderV3Abi,
@@ -215,18 +232,12 @@ export async function loadAtRiskFeed(chainId: number, opts: { hfMax?: number } =
     args: [dep.addressesProvider as Address],
   })) as unknown as [Array<Record<string, unknown>>, { marketReferenceCurrencyUnit: bigint }];
 
-  const reservesByAddr = new Map<
-    string,
-    { decimals: number; liquidityIndex: bigint; variableBorrowIndex: bigint; priceInRef: bigint; refUnit: bigint; displaySymbol: string; liqBonusBps: number }
-  >();
-  // Reference unit (1 USD in BASE_CURRENCY decimals — usually 1e8 on Aave).
+  const meta: ReserveMeta = new Map();
+  // Reference unit (1 USD in BASE_CURRENCY decimals, usually 1e8 on Aave).
   const refUnit = baseCurrencyInfo.marketReferenceCurrencyUnit;
-
   for (const r of reservesData) {
-    const entry = dep.reserves.find(
-      (d) => d.underlying.toLowerCase() === (r.underlyingAsset as string).toLowerCase(),
-    );
-    reservesByAddr.set((r.underlyingAsset as string).toLowerCase(), {
+    const entry = dep.reserves.find((d) => d.underlying.toLowerCase() === (r.underlyingAsset as string).toLowerCase());
+    meta.set((r.underlyingAsset as string).toLowerCase(), {
       decimals: Number(r.decimals),
       liquidityIndex: r.liquidityIndex as bigint,
       variableBorrowIndex: r.variableBorrowIndex as bigint,
@@ -236,83 +247,125 @@ export async function loadAtRiskFeed(chainId: number, opts: { hfMax?: number } =
       liqBonusBps: entry?.liquidationBonus ?? 10_000,
     });
   }
+  return meta;
+}
 
-  // Top up the borrower set + fan-out HF reads.
-  const state = await _topUpBorrowers(chainId);
-  const borrowers = Array.from(state.borrowers) as Address[];
+/** Re-read `borrowers` (health for all, positions for those inside the band), keeping last good rows on a failed read. */
+function readBorrowers(chainId: number, client: PublicClient, meta: ReserveMeta, borrowers: string[]) {
+  const dep = getAaveDeployment(chainId)!;
+  const lastGood = LAST_GOOD.get(chainId) ?? new Map<string, AtRiskRow>();
+  LAST_GOOD.set(chainId, lastGood);
 
-  const rows: AtRiskRow[] = [];
-  const concurrency = 8;
-  for (let i = 0; i < borrowers.length; i += concurrency) {
-    const slice = borrowers.slice(i, i + concurrency);
-    const chunkResults = await Promise.all(
-      slice.map(async (borrower) => {
-        try {
-          const [, totalDebtBase, , , , healthFactor] = (await client.readContract({
-            address: dep.pool as Address,
-            abi: PoolAbi,
-            functionName: "getUserAccountData",
-            args: [borrower],
-          })) as unknown as [bigint, bigint, bigint, bigint, bigint, bigint];
-          if (totalDebtBase === 0n) return null; // repaid
-          const hf = healthFactor === 2n ** 256n - 1n ? Infinity : Number(healthFactor) / 1e18;
-          if (hf > HF_THRESHOLD) return null;
+  return refreshRowsBatched<{ hf: number; debt: bigint }, UserReserves, AtRiskRow>({
+    borrowers,
+    batchSize: BATCH_SIZE,
+    readHealth: async (batch) => {
+      const res = await multicall(chainId,
+        client,
+        batch.map((b) => ({ target: dep.pool as Address, callData: encodeFunctionData({ abi: PoolAbi, functionName: "getUserAccountData", args: [b as Address] }) })),
+      );
+      return decodeEach(res, (data) => {
+        const [, debt, , , , healthFactor] = decodeFunctionResult({ abi: PoolAbi, functionName: "getUserAccountData", data }) as unknown as bigint[];
+        return { debt, hf: healthFactor === 2n ** 256n - 1n ? Infinity : Number(healthFactor) / 1e18 };
+      });
+    },
+    // Positions are read only for borrowers inside the widest band the page shows.
+    inBand: (h) => h.debt > 0n && h.hf <= HF_CEILING,
+    readPositions: async (batch) => {
+      const res = await multicall(chainId,
+        client,
+        batch.map((b) => ({
+          target: dep.uiPoolDataProviderV3 as Address,
+          callData: encodeFunctionData({ abi: UiPoolDataProviderV3Abi, functionName: "getUserReservesData", args: [dep.addressesProvider as Address, b as Address] }),
+        })),
+      );
+      return decodeEach(res, (data) => (decodeFunctionResult({ abi: UiPoolDataProviderV3Abi, functionName: "getUserReservesData", data }) as unknown as [UserReserves, number])[0]);
+    },
+    toRow: (borrower, h, userReserves) => {
+      const positions = _summarizePositions(userReserves, meta);
+      return positions ? { borrower, hf: h.hf, ...positions } : null;
+    },
+    lastGood,
+  });
+}
 
-          // Decorate with positions only when the borrower is actually
-          // at-risk — that's the long tail and it's expensive.
-          const [userReserves] = (await client.readContract({
-            address: dep.uiPoolDataProviderV3 as Address,
-            abi: UiPoolDataProviderV3Abi,
-            functionName: "getUserReservesData",
-            args: [dep.addressesProvider as Address, borrower],
-          })) as unknown as [
-            Array<{
-              underlyingAsset: string;
-              scaledATokenBalance: bigint;
-              usageAsCollateralEnabledOnUser: boolean;
-              scaledVariableDebt: bigint;
-            }>,
-            number,
-          ];
-          const positions = _summarizePositions(userReserves, reservesByAddr);
-          if (!positions) return null;
-          return { borrower, hf, ...positions } as AtRiskRow;
-        } catch (e) {
-          // Borrower may have hit a recent revert (genuine state issue) OR a
-          // transport blip. Skip the row either way so the feed doesn't fail
-          // wholesale, but log transport errors so a sustained outage (which
-          // would silently shrink the feed) shows up in ops logs.
-          const name = (e as Error)?.name ?? "";
-          const isRevert =
-            name === "ContractFunctionExecutionError" || name === "ContractFunctionRevertedError";
-          if (!isRevert) {
-            console.warn(
-              `[at-risk] transport error decorating borrower ${borrower} — dropped from feed. ` +
-                `Cause: ${(e as Error)?.message ?? e}`,
-            );
-          }
-          return null;
-        }
-      }),
-    );
-    for (const r of chunkResults) if (r) rows.push(r);
-  }
+async function buildFeed(chainId: number): Promise<FeedResult> {
+  const client = clientFor(chainId);
+  const meta = await readReserves(chainId, client);
+  RESERVES.set(chainId, meta);
 
-  // Sort by HF ascending — most-at-risk first, since liquidators care
-  // about under-1 first, then trending-bad next.
-  rows.sort((a, b) => a.hf - b.hf);
-
-  const generatedAt = Date.now();
-  DECORATE_CACHE.set(chainId, {
-    rows,
-    generatedAt,
-    scannedBlock: state.lastScannedBlock.toString(),
+  // A failed scan keeps the borrowers already known; the next build resumes after lastScannedBlock.
+  const state = await _topUpBorrowers(chainId).catch((e: unknown) => {
+    console.warn("[at-risk] borrower scan failed, using the known set:", e instanceof Error ? e.message : e);
+    return _ensureState(chainId);
   });
 
+  const { rows, failed } = await readBorrowers(chainId, client, meta, Array.from(state.borrowers));
+  // Most-at-risk first: liquidators care about under-1 first, then trending-bad.
+  rows.sort((a, b) => a.hf - b.hf);
+  return { rows, scannedBlock: state.lastScannedBlock.toString(), borrowerCount: state.borrowers.size, stale: failed };
+}
+
+function warmFeed(chainId: number): WarmFeed<FeedResult> {
+  let w = WARM.get(chainId);
+  if (!w) {
+    w = createWarmFeed(() => buildFeed(chainId), REFRESH_MS);
+    WARM.set(chainId, w);
+  }
+  return w;
+}
+
+// Re-reads per borrower: one at a time, and a repeat within the cooldown shares the earlier one.
+const REFRESH_COOLDOWN_MS = 3_000;
+const RECENT_REFRESH = new Map<string, { at: number; done: Promise<void> }>();
+
+/** Re-read one known borrower now (after a liquidation) and patch its row into the warm list. */
+async function refreshBorrower(chainId: number, borrower: string): Promise<void> {
+  const w = warmFeed(chainId);
+  await w.get(); // makes sure a list, the borrower set and the reserve metadata exist
+  const b = borrower.toLowerCase();
+  if (!STATE_BY_CHAIN.get(chainId)?.borrowers.has(b)) return;
+  const key = `${chainId}:${b}`;
+  const recent = RECENT_REFRESH.get(key);
+  if (recent && Date.now() - recent.at < REFRESH_COOLDOWN_MS) return recent.done;
+  const done = reread(chainId, w, b);
+  RECENT_REFRESH.set(key, { at: Date.now(), done });
+  return done;
+}
+
+async function reread(chainId: number, w: WarmFeed<FeedResult>, b: string): Promise<void> {
+  const meta = RESERVES.get(chainId);
+  if (!meta) return;
+  const { rows, failed } = await readBorrowers(chainId, clientFor(chainId), meta, [b]);
+  if (failed > 0) return; // a failed read leaves the row as it was
+  const lastGood = LAST_GOOD.get(chainId);
+  // Safe to run again on a newer list: a rebuild that read before the liquidation gets this patch too.
+  w.update((feed) => {
+    if (rows.length) lastGood?.set(b, rows[0]);
+    else lastGood?.delete(b);
+    return { ...feed, rows: [...feed.rows.filter((r) => r.borrower.toLowerCase() !== b), ...rows].sort((x, y) => x.hf - y.hf) };
+  });
+}
+
+export async function loadAtRiskFeed(chainId: number, opts: { hfMax?: number; refresh?: string } = {}): Promise<{
+  rows: AtRiskRow[];
+  generatedAt: string;
+  /** Seconds since the list was built, measured on the server, so the page never compares its own clock with the server's. */
+  ageSeconds: number;
+  scannedBlock: string;
+  borrowerCount: number;
+  stale: number;
+}> {
+  if (!isSupportedChain(chainId)) throw new Error(`Unsupported chainId ${chainId}`); // before any feed or timer exists
+  const hfMax = Math.min(opts.hfMax ?? 1.05, HF_CEILING);
+  if (opts.refresh) await refreshBorrower(chainId, opts.refresh);
+  const { value, generatedAt } = await warmFeed(chainId).get();
   return {
-    rows: rows.filter((r) => r.hf <= hfMax),
+    rows: value.rows.filter((r) => r.hf <= hfMax),
     generatedAt: new Date(generatedAt).toISOString(),
-    scannedBlock: state.lastScannedBlock.toString(),
-    borrowerCount: state.borrowers.size,
+    ageSeconds: Math.max(0, Math.floor((Date.now() - generatedAt) / 1000)),
+    scannedBlock: value.scannedBlock,
+    borrowerCount: value.borrowerCount,
+    stale: value.stale,
   };
 }
