@@ -180,7 +180,7 @@
 :root[data-rome-theme] .foot { background: transparent; }
 :root[data-rome-theme] .mark-sep { background: var(--line); }
 
-/* Serif page titles and section titles (the Rome web app: Literata for headlines). Headlines stay at regular weight. */
+/* Serif page titles and section titles (the Rome web app: the brand serif for headlines). Headlines stay at regular weight. */
 :root[data-rome-theme] h1, :root[data-rome-theme] h2, :root[data-rome-theme] h3 { font-family: var(--serif); font-weight: 400; letter-spacing: -.01em; }
 
 /* Focus ring: 2 px, 2 px off (Rome Purple on light, Light Pink on dark). Inputs show it on their own border. */
@@ -353,7 +353,7 @@
 :root[data-rome-theme] .sc-head h2 > * { -webkit-text-fill-color: currentColor; }
 :root[data-rome-theme] .sc-head h2 .btn, :root[data-rome-theme] .sc-head h2 .badge { font-family: var(--sans); font-weight: 500; letter-spacing: 0; }
 
-/* Big headline numerals: DM Sans Bold for the stat tiles, the chart headline and the pool page's figures (a reserve is an amount and stays Plex Mono, as does
+/* Big headline numerals: the brand sans, bold, for the stat tiles, the chart headline and the pool page's figures (a reserve is an amount and stays Plex Mono, as does
    every table column). No glow. The size is the biggest that fits: --n is the figure's length (figStyle), the tile's own width the limit, so a long total shrinks. */
 :root[data-rome-theme] .card.stat, :root[data-rome-theme] .chartcard, :root[data-rome-theme] .kv .c { container-type: inline-size; }
 :root[data-rome-theme] .stat .v, :root[data-rome-theme] .chartcard .big, :root[data-rome-theme] .kv .c.fig .v {

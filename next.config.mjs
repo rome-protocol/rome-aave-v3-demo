@@ -1,4 +1,5 @@
 import hadrianChain from "./lib/hadrian-chain.json" with { type: "json" };
+import { solanaRpcUpstream } from "./lib/server/solanaRpcUpstream.mjs";
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // `standalone` produces a self-contained `.next/standalone/` directory
@@ -29,7 +30,7 @@ const nextConfig = {
       // SOLANA_RPC_UPSTREAM per deploy.
       {
         source: "/api/solana-rpc",
-        destination: process.env.SOLANA_RPC_UPSTREAM ?? hadrianChain.solana.rpc,
+        destination: solanaRpcUpstream(process.env, hadrianChain),
       },
     ];
   },

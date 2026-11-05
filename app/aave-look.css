@@ -66,7 +66,7 @@
 /* The theme popover opens under the header button, at its right edge */
 :root[data-rome-theme] .theme-pop { z-index: 80; }
 
-/* Headline figures that are not .stat tiles (the asset page cards, the dashboard hero): DM Sans Bold, like .stat .v (guide section 5). Amounts and tables stay Plex Mono. */
+/* Headline figures that are not .stat tiles (the asset page cards, the dashboard hero): the brand sans, bold, like .stat .v (guide section 5). Amounts and tables stay Plex Mono. */
 :root[data-rome-theme] .headline-num { font-family: var(--sans); font-weight: 700; letter-spacing: -.03em; line-height: 1.1; white-space: nowrap; text-shadow: none; }
 
 /* A connected wallet row in the chooser says Disconnect in the status red, like the account menu */

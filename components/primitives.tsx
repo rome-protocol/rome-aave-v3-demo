@@ -406,7 +406,7 @@ export const Stat = ({
   return (
     <div className="stat" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <Eyebrow>{label}</Eyebrow>
-      {/* The figure is the Rome look's headline numeral (.stat .v: DM Sans Bold); the serif variant keeps its own face. */}
+      {/* The figure is the Rome look's headline numeral (.stat .v: the brand sans, bold); the serif variant keeps its own face. */}
       <div className="v tabular" style={{
         fontSize,
         ...(emphasis === "serif" ? { fontFamily: "var(--font-serif)", fontWeight: 400, letterSpacing: "-0.01em" } : {}),
