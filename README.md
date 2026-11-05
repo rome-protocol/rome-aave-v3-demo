@@ -118,7 +118,7 @@ The display layer never says `wUSDC` / `wETH` / `cached` / `wrapper` / `SPL`. To
 
 No chain value or Aave address is written into components or hooks (the only fixed addresses are the Rome helper precompile and Multicall3). The code reads:
 - **The vendored files**: chain config from `lib/hadrian-chain.json`; contract addresses (Pool / PoolConfigurator / Oracle / etc.), reserves and the token list from `lib/aave-hadrian.json` (loaded by `lib/registry-config.ts`)
-- **Names and logos** on screen come from `/api/token`, in this order: the Rome registry, Jupiter's verified list, the token's on-chain metadata. The registry source is optional and needs credentials (`REGISTRY_GITHUB_APP_ID`, `REGISTRY_GITHUB_APP_PRIVATE_KEY` or `REGISTRY_AUTH_TOKEN`); without them the app uses Jupiter's list and on-chain metadata.
+- **Names and logos** on screen come from `/api/token`, in this order: Jupiter's verified list, then the token's on-chain metadata. This copy has no registry source.
 - **RPC at request time**: reserve data (APYs / utilization / total supply / borrow) via `UiPoolDataProviderV3.getReservesData`; user data via `getUserReservesData(user)`; per-asset price via `AaveOracle.getAssetPrice`
 
 ## License
