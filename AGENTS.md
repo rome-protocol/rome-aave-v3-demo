@@ -1,14 +1,15 @@
 <!--
-CANONICAL AGENTS.md (v3.6). Ships in every public Rome repo + the create-rome-app
+CANONICAL AGENTS.md (v3.7). Ships in every public Rome repo + the create-rome-app
 scaffold. Public-safe: no internal hostnames, infra/platform names, or internal
 repo paths. v3.2: the `rome` CLI + MCP server shipped (rome-protocol/rome-cli) —
 tooling references are now real commands, not futures. v3.3: the Solana lane is
 the SDK's v1 lane (submitRomeTxV1, one Solana v1 transaction per call); new rule:
 grant each SPL wrapper once per wallet; lookup-table advice dropped (Rome sends v1
-transactions). v3.4: the Solana lane's example wallet is Solflare (Phantom does not
-sign Solana v1 transactions on devnet yet). v3.5: gas rule from measurements; who
+transactions). v3.4: the Solana lane's example wallet is Solflare. v3.5: gas rule from measurements; who
 signs in the parity pattern; a CLI install that works. v3.6: Hadrian is
-Rome's public testnet (the only test chain the docs target). Organized by where the builder starts —
+Rome's public testnet (the only test chain the docs target). v3.7 (this repo only):
+a section on what this repo's code does, and the wallet note matches it (Phantom and
+Solflare both work in this app). Organized by where the builder starts —
 the depth lives in the docs + the example repos it points to.
 Keep it short; an agent reads it before writing a line.
 -->
@@ -22,6 +23,17 @@ This file gives you the facts, organized by **what you're starting from**. Find 
 - **EVM inside Solana.** Your Solidity runs inside a Solana program; from Solidity you can invoke *any* Solana program (SPL Token, Meteora, a program you wrote) atomically, in one transaction, via the CPI precompile.
 - **One state, two lanes.** MetaMask (an EVM key) and a Solana wallet such as Solflare (a Solana key) drive the **same** contracts and the **same** state. A Solana user signs with their **Solana** key — no EVM keypair; Rome derives their EVM address (a synthetic address) from that key. An EVM user's on-chain identity is a Rome-derived PDA (`external_auth`).
 - **SPL *is* ERC-20, automatically.** Any SPL token is already an ERC-20 on Rome — the **same account**, no bridge and no wrapped-asset hop. An LP or position token minted as an SPL mint is spendable as an ERC-20 too, and vice-versa, once the wallet has granted the token's wrapper (rule 4).
+
+## What this repo is
+`rome-aave-v3-demo` is the web app for Aave v3.6 on Rome (Hadrian, chain 200010): Next.js 15, wagmi + viem for the EVM lane, Wallet Standard for the Solana lane. The contracts live in [rome-aave-v3](https://github.com/rome-protocol/rome-aave-v3); this repo holds the UI and its server routes only. Three reserves: USDC, ETH, SOL. Prices come from Rome's price book through `AaveOracle`; no price is hard-coded here.
+- **One identity at a time.** `hooks/useActiveLane.ts` decides whether the EVM wallet or the Solana wallet is active (`lib/lane/activeLane.ts`); every read and write binds to that address. A Solana wallet acts as its synthetic EVM address, `keccak256(pubkey)[12..32]` (`lib/lane/identity.ts`).
+- **EVM lane.** `hooks/useSendAaveCall.ts` estimates gas, pads it 1.3x and sends through wagmi `writeContract`. This repo does not use `@rome-protocol/sdk`; for an app of your own, follow rule 1 below.
+- **Solana lane.** Same hook. The call is encoded as an EVM transaction, the proxy composes one Solana v1 transaction (`rome_composeUnsignedAtomicV1`), and the wallet signs twice through Wallet Standard (`lib/lane/walletStandard.ts`): a readable "Rome authorization 0x<hash>" message, then the v1 transaction. The code is `lib/solana/`. A call the atomic composer refuses (borrow, liquidation, flash loans) goes through the relay (`lib/solana/relay.ts`): one wallet-signed USDC gas deposit when the synthetic is short, then the proxy's payer runs the legs.
+- **Money moves at action time.** `hooks/useSyntheticLegs.ts` moves tokens from the Solana wallet to its Rome account before a supply, repay or liquidation, and sweeps results back after a withdraw, borrow or liquidation. Native SOL is wrapped for the step and unwrapped after.
+- **Wrapper grant.** Each SPL wrapper is granted once per holder (`lib/wrapperGrant.ts`, `ensureWrapperGrant`), as rule 4 says.
+- **Wallets.** Phantom and Solflare both work on Hadrian. The signing code never branches on a wallet's brand; when a wallet flags the first v1 request by mistake it asks once more.
+- **Config.** Chain and deployment values are vendored in `lib/hadrian-chain.json` and `lib/aave-hadrian.json`. `ROME_RPC_UPSTREAM` and `SOLANA_RPC_UPSTREAM` set the upstreams of the same-origin proxies `/api/rome-rpc` and `/api/solana-rpc`.
+- **Checks.** `npx tsc --noEmit`, `npm test` and `npm run build` (the CI gate).
 
 ## Find your starting point
 
@@ -62,7 +74,7 @@ Every Rome chain's gas token is **USDC** (Circle). **There is no Rome faucet.** 
 3. **Calling Solana from Solidity (CPI — the differentiator).** Precompiles: **CPI `0xFF…08`**, **Helper `0xFF…09`**, **Withdraw `0x42…16`**. The account rules agents get wrong: the accounts array must be **non-empty**; the **operator and the program_id must NOT** appear in it; to sign as your contract use `HELPER.pda(address(this))` as the signer (the precompile signs as `msg.sender`, so a router contract cannot sign a *user's* PDA). Full ABI + per-selector billing: the precompile reference (docs).
 4. **Grant each SPL wrapper once per wallet.** An ERC-20 wrapper over an SPL mint (`wUSDC`, `wETH`, …) moves a user's tokens as the SPL delegate of their token account. When the wrapper's `isEnabled(user)` returns false, the wallet — a MetaMask address, or a Solana user's synthetic address (provisioned first, see the SDK section) — sends `approve_spl(wrapper, 2^64-1, mint)` straight to the Helper precompile, where the mint is the wrapper's `mint_id()`. Without it every `transfer` or `transferFrom` out of that wallet reverts with SPL error `0x4`.
 5. **Never hardcode addresses — read the registry.** Chain ids, RPC URLs, contract addresses, token mints, and Solana program ids all come from **`@rome-protocol/registry`** (or the `rome` CLI/MCP `facts_chain`/`facts_tokens`/`facts_contracts` tools). Hardcoded values drift and break across deploys.
-6. **Test both lanes with a fresh wallet.** A feature must work on the EVM lane (MetaMask) *and* the Solana lane (Solflare, for example). Verify each with a brand-new wallet and a tiny amount before claiming done. The Solana lane needs a wallet that signs Solana v1 transactions: on devnet, Solflare does and Phantom does not yet.
+6. **Test both lanes with a fresh wallet.** A feature must work on the EVM lane (MetaMask) *and* the Solana lane (Solflare, for example). Verify each with a brand-new wallet and a tiny amount before claiming done. The Solana lane needs a wallet that signs Solana v1 transactions: this app works with Solflare and Phantom on Hadrian (a wallet may flag the first request by mistake; the app asks once more).
 7. **When a tx fails, use the taxonomy + the cross-VM map.** Rome surfaces specific failures (rent-starved pool payer or StateHolder, emulation-vs-simulation mismatches, nonce races). Match them against the taxonomy: `rome cookbook errors <query>`. To see the Solana settlement of a Rome tx, map it with `rome tx <chain> <hash>` (raw RPC: `rome_solanaTxForEvmTx`).
 
 ## The SDK — `@rome-protocol/sdk`

@@ -1,7 +1,9 @@
 import { ReactNode, useEffect, useRef } from 'react';
 import { useWalletStore, useWallets, useWalletConnectionHandler } from '@/store/walletStore';
-import { WalletModal } from './WalletModal';
+import { WalletChooser } from './WalletChooser';
 import { sessionManager } from '@/utils/sessionManager';
+import { useActiveLane } from '@/hooks/useActiveLane';
+import { useLaneStore } from '@/store/laneStore';
 
 interface UniWalletProviderProps {
   children: ReactNode;
@@ -14,15 +16,27 @@ export const UniWalletProvider = ({ children }: UniWalletProviderProps) => {
 
   useWalletConnectionHandler();
 
+
   // `useWallets()` returns a fresh object every render, so the activity
   // listeners + session-check interval are installed once on mount and reach
   // current connection state through this ref. Keying the effect on `wallets`
   // instead tore down and reinstalled the interval + four document listeners
   // on every render.
   const walletsRef = useRef(wallets);
+
+  // One identity at a time: the lane decision is applied HERE, at the provider,
+  // so no consumer can act as a wallet the visitor did not choose. Eviction
+  // drops the losing wallet's live session, not merely our view of it.
+  const { evict } = useActiveLane();
+  const { preferred, setPreferred } = useLaneStore();
   useEffect(() => {
     walletsRef.current = wallets;
   });
+
+  useEffect(() => {
+    if (evict === 'evm') walletsRef.current.disconnectEVM();
+    if (evict === 'solana') walletsRef.current.disconnectSolana();
+  }, [evict]);
 
   useEffect(() => {
     if (!checked.current) {
@@ -51,24 +65,29 @@ export const UniWalletProvider = ({ children }: UniWalletProviderProps) => {
       clearInterval(interval);
     };
   }, []);
-  
+
+  // After a refresh the wallet comes back on its own: give it a fresh session
+  // (the mount check above may just have cleared an expired one) so the idle
+  // check does not disconnect it again.
+  useEffect(() => {
+    if (wallets.isAnyConnected) sessionManager.ensureSession();
+  }, [wallets.isAnyConnected]);
+
   return (
     <>
       {children}
-      <WalletModal
-        isOpen={isModalOpen}
-        onClose={closeModal}
-        onAfterLeave={resetModalView}
+      {isModalOpen ? <WalletChooser
+        onClose={() => { closeModal(); resetModalView(); }}
         wallets={wallets.getAvailableWallets()}
-        onConnectEVM={wallets.connectEVM}
-        onConnectSolana={wallets.connectSolana}
-        onDisconnectEVM={() => wallets.disconnectEVM()}
-        onDisconnectSolana={() => wallets.disconnectSolana()}
+        onConnectEVM={async (id) => { setPreferred('evm'); await wallets.connectEVM(id); }}
+        onConnectSolana={async (id) => { setPreferred('solana'); await wallets.connectSolana(id); }}
+        onDisconnectEVM={() => { if (preferred === 'evm') setPreferred(null); wallets.disconnectEVM(); }}
+        onDisconnectSolana={() => { if (preferred === 'solana') setPreferred(null); wallets.disconnectSolana(); }}
         connectingWalletId={wallets.connectingWalletId}
         connectedEvmWalletId={wallets.connectedEvmWalletId}
         connectedSolanaWalletId={wallets.connectedSolanaWalletId}
         modalView={wallets.modalView}
-      />
+      /> : null}
     </>
   );
 };

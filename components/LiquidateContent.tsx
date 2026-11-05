@@ -5,8 +5,9 @@
 // FilterPill is inlined here (also used by /history) — hoist if a third
 // consumer ever lands.
 
-import { useMemo, useState } from "react";
-import { useAccount } from "wagmi";
+import { useEffect, useMemo, useState } from "react";
+import { FEED_LATE_MS, feedAgeLabel, feedAgeMs } from "@/lib/feed-age";
+import { useActiveAddress } from "@/hooks/useActiveLane";
 import { useUniWallet } from "@/hooks/useUniWallet";
 import {
   Banner,
@@ -22,11 +23,12 @@ import { fallbackChainInfo } from "@/lib/registry-config";
 import {
   IconAlert,
   IconChevronDown,
-  IconInfo,
   IconRefresh,
 } from "@/components/icons";
 import { useAaveConfig, useAtRiskFeed, useUserData } from "@/hooks/useAaveData";
-import { fmt } from "@/lib/format";
+import { fmt, fmtUsd } from "@/lib/format";
+import { NETWORK_ON } from "@/lib/brand";
+import { Hint, Tip } from "@/components/Tip";
 import { LiquidationModal } from "@/components/LiquidationModal";
 import type { AtRiskRow, ChainInfo, Reserve } from "@/lib/types";
 
@@ -43,25 +45,32 @@ const fallbackChainStub: ChainInfo = fallbackChainInfo;
 
 type HfBand = "< 1.00" | "< 1.05" | "< 1.10" | "All";
 
+// The feed carries every borrower up to this HF; the band filter below narrows it in the page.
+const FEED_HF_MAX = 2;
+
 export function LiquidateContent() {
   const cfg = useAaveConfig();
-  const hfMax = 1.05;
-  const feed = useAtRiskFeed(hfMax);
+  const feed = useAtRiskFeed(FEED_HF_MAX);
   const usr = useUserData();
-  const { address: connectedAddress, isConnected } = useAccount();
+  const { address: connectedAddress, isConnected } = useActiveAddress();
   const wallet = useUniWallet();
-  const openConnectModal = () => wallet.openFilteredWalletModal("evm");
+  const openConnectModal = () => wallet.openFilteredWalletModal("all");
 
   const [hfFilter, setHfFilter] = useState<HfBand>("< 1.05");
   const [collatFilter, setCollatFilter] = useState<string>("Any");
   const [debtFilter, setDebtFilter] = useState<string>("Any");
   const [minSize, setMinSize] = useState<string>("0");
   const [activeRow, setActiveRow] = useState<AtRiskRow | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(t);
+  }, []);
 
   if (cfg.isLoading) {
     return (
       <ShellWithPlaceholder>
-        <div style={{ color: "var(--fg2)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Loading reserves…</div>
+        <div style={{ color: "var(--fg2)", fontFamily: "var(--font-mono)", fontSize: 12 }}>Loading…</div>
       </ShellWithPlaceholder>
     );
   }
@@ -69,7 +78,7 @@ export function LiquidateContent() {
     return (
       <ShellWithPlaceholder>
         <Banner variant="danger" icon={<IconAlert size={16} />}>
-          Couldn&rsquo;t reach the chain RPC. Reserve data is unavailable.
+          Can&rsquo;t load market data.
         </Banner>
       </ShellWithPlaceholder>
     );
@@ -93,11 +102,10 @@ export function LiquidateContent() {
     return true;
   });
 
-  const feedStatus: FeedStatus = feed.isError
-    ? "error"
-    : feed.isFetching
-      ? "stale"
-      : "live";
+  // The list is rebuilt on the server every 15 s; one older than three rebuilds is behind.
+  const ageMs = feedAgeMs(feed.data?.ageSeconds, feed.dataUpdatedAt, now);
+  const feedStatus: FeedStatus = feed.isError ? "error" : ageMs !== null && ageMs > FEED_LATE_MS ? "stale" : "live";
+  const feedAge = ageMs !== null ? feedAgeLabel(ageMs) : undefined;
 
   return (
     <div style={pageShell}>
@@ -106,7 +114,7 @@ export function LiquidateContent() {
         <PageHero
           eyebrow="Liquidate"
           title={<>Earn the <i>liquidation</i> bonus.</>}
-          sub={`Repay undercollateralized debt on ${chain.displayName} and receive collateral at a discount. HF < 1 is actionable; 1.00–1.05 listed for situational awareness.`}
+          sub={<>Repay undercollateralized debt {NETWORK_ON} and receive collateral at a discount.<Hint text="HF below 1 can be liquidated. 1.00 to 1.05 is listed to watch. A liquidation reverts if HF is 1 or higher when it executes." /></>}
         />
 
         <FilterBar
@@ -116,6 +124,7 @@ export function LiquidateContent() {
           minSize={minSize}
           reserves={reserves}
           feedStatus={feedStatus}
+          feedAge={feedAge}
           onChangeHf={setHfFilter}
           onChangeCollat={setCollatFilter}
           onChangeDebt={setDebtFilter}
@@ -129,23 +138,18 @@ export function LiquidateContent() {
             icon={<IconAlert size={16} />}
             action={<Button variant="secondary" size="sm" onClick={() => void feed.refetch()}>Retry</Button>}
           >
-            At-risk backend unreachable.
+            At-risk list unavailable.
           </Banner>
         ) : null}
 
         <RowTable
           rows={filtered}
-          connectedAddress={connectedAddress}
+          connectedAddress={connectedAddress ?? undefined}
           isConnected={isConnected}
           onConnect={openConnectModal}
           onLiquidate={(row) => setActiveRow(row)}
         />
 
-        <Banner variant="info" icon={<IconInfo size={16} />}>
-          <span style={{ color: "var(--fg2)" }}>
-            HF &lt; 1 is actionable. 1.00–1.05 listed for situational awareness; liquidation reverts if HF ≥ 1 at execution time.
-          </span>
-        </Banner>
       </Container>
 
       <LiquidationModal
@@ -171,7 +175,7 @@ const ShellWithPlaceholder = ({ children }: { children: React.ReactNode }) => (
 
 // ───────────────── PageHero ─────────────────
 
-const PageHero = ({ eyebrow, title, sub }: { eyebrow: string; title: React.ReactNode; sub: string }) => (
+const PageHero = ({ eyebrow, title, sub }: { eyebrow: string; title: React.ReactNode; sub: React.ReactNode }) => (
   <div style={{ maxWidth: 720 }}>
     <Eyebrow style={{ marginBottom: 6 }}>{eyebrow}</Eyebrow>
     <h1 style={{
@@ -200,6 +204,7 @@ interface FilterBarProps {
   minSize: string;
   reserves: Reserve[];
   feedStatus: FeedStatus;
+  feedAge?: string;
   onChangeHf: (v: HfBand) => void;
   onChangeCollat: (v: string) => void;
   onChangeDebt: (v: string) => void;
@@ -214,6 +219,7 @@ const FilterBar = ({
   minSize,
   reserves,
   feedStatus,
+  feedAge,
   onChangeHf,
   onChangeCollat,
   onChangeDebt,
@@ -232,13 +238,11 @@ const FilterBar = ({
         <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--fg2)", letterSpacing: "0.06em", textTransform: "uppercase" }}>Min size $</span>
         <input
           value={minSize}
+          className="in"
           onChange={(e) => onChangeMinSize(e.target.value.replace(/[^\d]/g, ""))}
           style={{
-            background: "var(--bg-surface-2)",
-            border: "1px solid var(--border-default)",
             borderRadius: "var(--r-pill)",
             padding: "5px 12px",
-            color: "var(--fg1)",
             fontFamily: "var(--font-mono)",
             fontSize: 12,
             width: 84,
@@ -246,22 +250,21 @@ const FilterBar = ({
         />
       </div>
       <div style={{ flex: 1 }} />
-      <FeedStatusIndicator status={feedStatus} />
-      <button
-        type="button"
-        onClick={onRefresh}
-        title="Refresh"
-        style={{
-          background: "transparent",
-          border: "1px solid var(--border-default)",
-          borderRadius: "var(--r-pill)",
-          padding: 8,
-          color: "var(--fg2)",
-          cursor: "pointer",
-        }}
-      >
-        <IconRefresh size={14} />
-      </button>
+      <FeedStatusIndicator status={feedStatus} age={feedAge} />
+      <Tip text="Refresh" align="end">
+        <button
+          type="button"
+          onClick={onRefresh}
+          aria-label="Refresh"
+          className="chip"
+          style={{
+            padding: 8,
+            cursor: "pointer",
+          }}
+        >
+          <IconRefresh size={14} />
+        </button>
+      </Tip>
     </div>
   );
 };
@@ -282,11 +285,9 @@ const FilterPill = ({
     <div style={{ position: "relative" }} onClick={(e) => e.stopPropagation()}>
       <button
         type="button"
+        className="chip"
         onClick={() => setOpen((o) => !o)}
         style={{
-          background: "var(--bg-surface-2)",
-          border: "1px solid var(--border-default)",
-          borderRadius: "var(--r-pill)",
           padding: "5px 10px 5px 12px",
           color: "var(--fg1)",
           fontSize: 12,
@@ -312,7 +313,7 @@ const FilterPill = ({
           padding: 6,
           minWidth: 160,
           zIndex: 20,
-          boxShadow: "0 24px 48px -12px rgba(0,0,0,0.6)",
+          boxShadow: "var(--shadow-lg)",
         }}>
           {options.map((o) => (
             <button
@@ -340,9 +341,9 @@ const FilterPill = ({
   );
 };
 
-const FeedStatusIndicator = ({ status }: { status: FeedStatus }) => {
+const FeedStatusIndicator = ({ status, age }: { status: FeedStatus; age?: string }) => {
   const c = status === "live" ? "var(--hf-safe)" : status === "stale" ? "var(--hf-warn)" : "var(--hf-danger)";
-  const label = status === "live" ? "Live · 6s tick" : status === "stale" ? "Refreshing…" : "Error";
+  const label = status === "error" ? "Error" : !age ? "Loading…" : `${status === "live" ? "Updated" : "Behind · updated"} ${age}`;
   return (
     <span style={{
       display: "inline-flex",
@@ -377,64 +378,74 @@ const RowTable = ({ rows, connectedAddress, isConnected, onConnect, onLiquidate 
   if (rows.length === 0) {
     return (
       <div className="card" style={{ padding: "32px 20px", textAlign: "center", color: "var(--fg2)", fontSize: 14 }}>
-        No at-risk positions match the current filters.
+        No positions match.
       </div>
     );
   }
 
   return (
-    <div className="card">
-      <table className="rome-table">
+    <div className="card" style={{ overflowX: "auto" }}>
+      <table className="rome-table compact-table liq-table">
         <thead>
           <tr>
             <th>Borrower</th>
             <th className="num">HF</th>
-            <th>Collateral</th>
+            <th className="hide-sm">Collateral</th>
             <th>Debt</th>
-            <th className="num">Bonus</th>
-            <th style={{ width: 160, textAlign: "right" }}></th>
+            <th className="num hide-sm">Bonus</th>
+            <th className="liq-act" style={{ textAlign: "right" }}></th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => {
             const isSelf = isConnected && connectedAddress && row.borrower.toLowerCase() === connectedAddress.toLowerCase();
-            const tooHealthy = row.hf >= 1.05;
-            const disabled = !!isSelf || tooHealthy || !isConnected;
+            // Aave only accepts a liquidation below HF 1; 1.00-1.05 is listed for awareness.
+            const notLiquidatable = !(row.hf < 1);
+            const disabled = !!isSelf || notLiquidatable || !isConnected;
             const title = !isConnected
               ? "Connect a wallet to liquidate"
               : isSelf
                 ? "Cannot liquidate your own position"
-                : tooHealthy
-                  ? "HF too high to liquidate"
+                : notLiquidatable
+                  ? row.hf < 1.05 ? "Close to liquidation: not liquidatable until HF is below 1" : "Not liquidatable yet"
                   : "Liquidate";
             return (
               <tr key={row.borrower}>
                 <td>
-                  <span className="mono" style={{ fontSize: 12, color: "var(--fg1)" }}>
-                    {fmt.addr(row.borrower, 8, 6)}
+                  <span className="mono hide-sm" style={{ fontSize: 12, color: "var(--fg1)", whiteSpace: "nowrap" }}>
+                    {fmt.addr(row.borrower, 6, 4)}
+                  </span>
+                  <span className="mono show-sm-inline" style={{ fontSize: 12, color: "var(--fg1)", whiteSpace: "nowrap" }}>
+                    {fmt.addr(row.borrower, 4, 4)}
                   </span>
                   {isSelf ? <Tag tone="warn">You</Tag> : null}
                 </td>
-                <td className="num"><HealthFactorPill hf={row.hf} size="sm" showLabel={false} /></td>
-                <td><CollatDebtCell sym={row.collatSym} usd={row.collatUsd} /></td>
-                <td><CollatDebtCell sym={row.debtSym} usd={row.debtUsd} /></td>
-                <td className="num">
+                <td className="num"><HealthFactorPill hf={row.hf} size="sm" showLabel={false} dp={3} /></td>
+                <td className="hide-sm"><CollatDebtCell sym={row.collatSym} usd={row.collatUsd} /></td>
+                <td><CollatDebtCell sym={row.debtSym} usd={row.debtUsd} title="Total debt, all assets" /></td>
+                <td className="num hide-sm">
                   <span style={{ color: "var(--hf-safe)" }}>+{fmt.pct(row.bonusPct, 1)}</span>
                 </td>
-                <td style={{ textAlign: "right" }}>
+                <td className="liq-act" style={{ textAlign: "right" }}>
                   {!isConnected ? (
                     <Button variant="secondary" size="sm" onClick={onConnect}>Connect</Button>
                   ) : (
-                    <Button
-                      variant={row.hf < 1 ? "primary" : "secondary"}
-                      size="sm"
-                      disabled={disabled}
-                      title={title}
-                      onClick={() => onLiquidate(row)}
-                    >
-                      Liquidate
-                    </Button>
+                    <Tip text={disabled ? title : undefined} align="end" focusable={disabled}>
+                      <Button
+                        variant={row.hf < 1 ? "primary" : "secondary"}
+                        size="sm"
+                        disabled={disabled}
+                        onClick={() => onLiquidate(row)}
+                      >
+                        Liquidate
+                      </Button>
+                    </Tip>
                   )}
+                  {isConnected && disabled && (notLiquidatable || isSelf) ? (
+                    <div style={{ color: "var(--fg3)", fontSize: 11, marginTop: 4 }}>
+                      {isSelf ? "Your own position" : row.hf < 1.05 ? "Close to liquidation" : "Not liquidatable yet"}
+                    </div>
+                  ) : null}
                 </td>
               </tr>
             );
@@ -445,9 +456,12 @@ const RowTable = ({ rows, connectedAddress, isConnected, onConnect, onLiquidate 
   );
 };
 
-const CollatDebtCell = ({ sym, usd }: { sym: string; usd: number }) => (
-  <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-    <AssetSymbol symbol={sym} size={22} />
-    <span className="mono tabular" style={{ color: "var(--fg2)", fontSize: 12 }}>{fmt.usd(usd, { compact: true })}</span>
-  </div>
-);
+const CollatDebtCell = ({ sym, usd, title }: { sym: string; usd: number; title?: string }) => {
+  const cell = (
+    <div className="liq-cd" style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+      <AssetSymbol symbol={sym} size={22} />
+      <span className="mono tabular" style={{ color: "var(--fg2)", fontSize: 12 }}>{fmtUsd(usd)}</span>
+    </div>
+  );
+  return title ? <Tip text={title} align="start" focusable>{cell}</Tip> : cell;
+};

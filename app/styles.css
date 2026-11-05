@@ -1,23 +1,7 @@
 /* ============================================================
    Rome Aave V3 — dark-mode tokens (extends rome design system)
-   Per spec §4 — dark mode is the default; light mode out of scope.
+   The Rome app look (theme.css, aave-look.css) is applied on top of these and re-points them.
    ============================================================ */
-
-@font-face {
-  font-family: 'IBM Plex Mono';
-  src: url('/fonts/IBMPlexMono-Regular.ttf') format('truetype');
-  font-weight: 400; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: 'IBM Plex Mono';
-  src: url('/fonts/IBMPlexMono-Medium.ttf') format('truetype');
-  font-weight: 500; font-style: normal; font-display: swap;
-}
-@font-face {
-  font-family: 'IBM Plex Mono';
-  src: url('/fonts/IBMPlexMono-SemiBold.ttf') format('truetype');
-  font-weight: 600; font-style: normal; font-display: swap;
-}
 
 :root {
   /* Brand */
@@ -71,11 +55,11 @@
   --hf-risk-bg:         rgba(232, 160, 78, 0.20);
   --hf-danger-bg:       rgba(226, 106, 106, 0.16);
 
-  /* Type families — use real Rome fonts (Literata/DM Sans/Plex Sans only
-     specified for the Rome design system which can't upload fonts) */
-  --font-serif: 'Georgia', 'Iowan Old Style', 'Palatino Linotype', Georgia, serif;
-  --font-sans:  'system-ui', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
-  --font-mono:  'IBM Plex Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  /* Type families: the faces and their fallbacks are --serif, --sans and --mono (globals.css, the Rome DEX's);
+     these are the names this app's screens already use. */
+  --font-serif: var(--serif);
+  --font-sans:  var(--sans);
+  --font-mono:  var(--mono);
 
   /* Type scale */
   --text-display: 56px;

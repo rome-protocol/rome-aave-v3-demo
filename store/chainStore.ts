@@ -1,4 +1,4 @@
-// Single-chain (Hadrian) chain store. Mirrors the shape of the Rome web app's
+// Single-chain (Hadrian) chain store. Mirrors the shape of rome-ui's
 // chainStore so the lifted walletStore can use `useChainStore()` and
 // `useChainStore.getState().chains` without modification. The demo does
 // not switch between chains at runtime — fields exist to satisfy the

@@ -2,6 +2,11 @@
 
 // ActionModal — supply / withdraw / borrow / repay. Phase machine:
 //   editing | error → AmountInput + overview + submit button
+//   funding         → spinner (Solana wallet: top the synthetic up)
+//   granting        → spinner (one-time wrapper enable, when needed)
+//   depositing      → spinner (Solana wallet: gas for a multi-step action)
+//   relaying        → spinner (Solana wallet: the proxy runs the steps)
+//   sweeping        → spinner (Solana wallet: return what the action produced)
 //   approving       → spinner + (when present) approve-tx link
 //   executing       → spinner + (when present) action-tx link
 //   success         → check + amount + explorer link + close button
@@ -16,14 +21,14 @@ import {
   Eyebrow,
 } from "@/components/primitives";
 import { AssetSymbol } from "@/components/primitives";
+import { Dialog } from "@/components/Dialog";
 import {
   IconAlert,
   IconCheck,
-  IconClose,
   IconExternal,
 } from "@/components/icons";
-import { evmExplorerTxUrl } from "@/lib/registry-config";
-import { fmt } from "@/lib/format";
+import { evmExplorerTxUrl, solanaExplorerTxUrl } from "@/lib/registry-config";
+import { fmt, fmtAmount, fmtUsd } from "@/lib/format";
 import { hadrian } from "@/lib/wagmi";
 import { useAaveAction, type ActionMode } from "@/hooks/useAaveAction";
 import { projectHealthFactor, type HfProjection } from "@/lib/hf-projection";
@@ -133,13 +138,13 @@ const ActionModalInner = ({
   const amtUsd = amtN * reserve.priceUsd;
 
   const balanceLabel = useMemo(() => {
-    if (mode === "supply") return { label: "Wallet", value: `${fmt.num(position?.walletBalance ?? 0)} ${symbol}` };
-    if (mode === "withdraw") return { label: "Supplied", value: `${fmt.num(position?.suppliedBalance ?? 0)} ${symbol}` };
+    if (mode === "supply") return { label: "Wallet", value: `${fmtAmount(position?.walletBalance ?? 0)} ${symbol}` };
+    if (mode === "withdraw") return { label: "Supplied", value: `${fmtAmount(position?.suppliedBalance ?? 0)} ${symbol}` };
     if (mode === "borrow") {
       const avail = reserve.priceUsd > 0 ? availableBorrowsUsd / reserve.priceUsd : 0;
-      return { label: "Available", value: `${fmt.num(avail, 4)} ${symbol}` };
+      return { label: "Available", value: `${fmtAmount(avail)} ${symbol}` };
     }
-    return { label: "Debt", value: `${fmt.num(position?.debtBalance ?? 0)} ${symbol}` };
+    return { label: "Debt", value: `${fmtAmount(position?.debtBalance ?? 0)} ${symbol}` };
   }, [mode, position, reserve.priceUsd, availableBorrowsUsd, symbol]);
 
   const onMax = () => {
@@ -186,16 +191,25 @@ const ActionModalInner = ({
 
   const submitDisabled =
     action.amountRaw === 0n ||
+    action.phase === "funding" ||
+    action.phase === "granting" ||
     action.phase === "approving" ||
     action.phase === "executing" ||
+    action.phase === "depositing" ||
+    action.phase === "relaying" ||
+    action.phase === "sweeping" ||
     !safetyCheck.ok;
 
   const submitLabel = action.needsApprove
     ? `Approve ${symbol} and ${verbs.verb.toLowerCase()}`
     : `${verbs.verb} ${amount || "0"} ${symbol}`;
 
+  const grantExplorer = action.grantHash ? evmExplorerTxUrl(hadrian.id, action.grantHash) : undefined;
   const approveExplorer = action.approveHash ? evmExplorerTxUrl(hadrian.id, action.approveHash) : undefined;
   const executeExplorer = action.executeHash ? evmExplorerTxUrl(hadrian.id, action.executeHash) : undefined;
+  const fundExplorer = action.fundSignature ? solanaExplorerTxUrl(hadrian.id, action.fundSignature) : undefined;
+  const sweepExplorer = action.sweepHash ? evmExplorerTxUrl(hadrian.id, action.sweepHash) : undefined;
+  const unwrapExplorer = action.unwrapSignature ? solanaExplorerTxUrl(hadrian.id, action.unwrapSignature) : undefined;
 
   return (
     <ModalShell
@@ -204,6 +218,8 @@ const ActionModalInner = ({
       title={`${verbs.title} ${symbol}`}
       icon={<AssetSymbol symbol={symbol} size={26} />}
       width={480}
+      dismissOnGround={false}
+      dismissible={action.phase === "editing" || action.phase === "error" || action.phase === "success"}
     >
       {/* Editing / error — form */}
       {(action.phase === "editing" || action.phase === "error") ? (
@@ -223,7 +239,7 @@ const ActionModalInner = ({
           <div style={{ marginTop: -8, fontSize: 12, color: "var(--fg2)" }}>
             ≈{" "}
             <span className="mono tabular" style={{ color: "var(--fg1)" }}>
-              {fmt.usd(amtUsd)}
+              {fmtUsd(amtUsd)}
             </span>
           </div>
 
@@ -233,6 +249,9 @@ const ActionModalInner = ({
 
           {action.phase === "error" && action.error ? (
             <Banner variant="danger" icon={<IconAlert size={16} />}>{action.error}</Banner>
+          ) : null}
+          {action.phase === "error" && executeExplorer ? (
+            <TxLinkRow label={`${verbs.title} transaction`} hash={action.executeHash!} href={executeExplorer} />
           ) : null}
 
           <TransactionOverview
@@ -245,10 +264,40 @@ const ActionModalInner = ({
         </>
       ) : null}
 
+      {/* Funding — Solana wallet: move what the action needs into your Rome balance */}
+      {action.phase === "funding" ? (
+        <SpinnerRow caption={`Moving ${symbol} from your wallet…`} />
+      ) : null}
+
+      {/* Depositing — Solana wallet: this action runs in several steps and needs gas on your Rome balance */}
+      {action.phase === "depositing" ? (
+        <SpinnerRow caption="Adding gas…" />
+      ) : null}
+
+      {/* Relaying — the proxy runs the steps after one approval */}
+      {action.phase === "relaying" ? (
+        <SpinnerRow caption={`Submitting ${verbs.verb.toLowerCase()}. Several steps…`} />
+      ) : null}
+
+      {/* Sweeping — Solana wallet: return what the action produced */}
+      {action.phase === "sweeping" ? (
+        <SpinnerRow caption={`Returning ${symbol} to your wallet…`} />
+      ) : null}
+
+      {/* Granting — the wrapper's one-time enable for this wallet */}
+      {action.phase === "granting" ? (
+        <>
+          <SpinnerRow caption={`Enabling ${symbol} for your wallet…`} />
+          {grantExplorer ? (
+            <TxLinkRow label="Enable transaction" hash={action.grantHash!} href={grantExplorer} />
+          ) : null}
+        </>
+      ) : null}
+
       {/* Approving — spinner + (when known) approve-tx link */}
       {action.phase === "approving" ? (
         <>
-          <SpinnerRow caption={`Approving ${symbol} for Pool…`} />
+          <SpinnerRow caption={`Approving ${symbol}…`} />
           {approveExplorer ? (
             <TxLinkRow label="Approval transaction" hash={action.approveHash!} href={approveExplorer} />
           ) : null}
@@ -284,7 +333,7 @@ const ActionModalInner = ({
               {verbs.past}.
             </div>
             <div style={{ color: "var(--fg2)", fontSize: 13 }}>
-              {action.amountRaw ? `${fmt.num(amtN)} ${symbol} · ${fmt.usd(amtUsd)}` : symbol}
+              {action.amountRaw ? `${fmtAmount(amtN)} ${symbol} · ${fmtUsd(amtUsd)}` : symbol}
             </div>
             {executeExplorer ? (
               <a
@@ -308,6 +357,15 @@ const ActionModalInner = ({
         </>
       ) : null}
 
+      {/* Solana wallet: the money moves, linked so the user can check them */}
+      {(action.phase === "success" || action.phase === "error") ? (
+        <>
+          {fundExplorer ? <TxLinkRow label="Funds moved in (Solana)" hash={action.fundSignature!} href={fundExplorer} /> : null}
+          {sweepExplorer ? <TxLinkRow label="Funds returned to wallet" hash={action.sweepHash!} href={sweepExplorer} /> : null}
+          {unwrapExplorer ? <TxLinkRow label="Wrapped SOL turned into SOL (Solana)" hash={action.unwrapSignature!} href={unwrapExplorer} /> : null}
+        </>
+      ) : null}
+
       {/* Action buttons */}
       <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
         {(action.phase === "editing" || action.phase === "error") ? (
@@ -321,9 +379,9 @@ const ActionModalInner = ({
             {submitLabel}
           </Button>
         ) : null}
-        {(action.phase === "approving" || action.phase === "executing") ? (
+        {(action.phase === "funding" || action.phase === "granting" || action.phase === "approving" || action.phase === "executing" || action.phase === "depositing" || action.phase === "relaying" || action.phase === "sweeping") ? (
           <Button variant="secondary" fullWidth size="lg" disabled>
-            <Spinner /> {action.phase === "approving" ? "Awaiting approval…" : "Submitting…"}
+            <Spinner /> {action.phase === "funding" ? "Moving funds…" : action.phase === "sweeping" ? "Returning funds…" : action.phase === "granting" ? "Enabling…" : action.phase === "approving" ? "Awaiting approval…" : action.phase === "depositing" ? "Adding gas…" : "Submitting…"}
           </Button>
         ) : null}
         {action.phase === "success" ? (
@@ -344,6 +402,10 @@ interface ModalShellProps {
   width?: number;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  /** false while the window is moving money: Escape and a click on the ground do not close it. */
+  dismissible?: boolean;
+  /** false for a review/confirm that ends in a signature: a click on the ground does not close it (Escape and the close button still do while nothing is in flight). */
+  dismissOnGround?: boolean;
 }
 
 export const ModalShell = ({
@@ -354,73 +416,15 @@ export const ModalShell = ({
   width = 460,
   children,
   footer,
+  dismissible = true,
+  dismissOnGround = true,
 }: ModalShellProps) => {
   if (!open) return null;
   return (
-    <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 80,
-        background: "var(--bg-overlay)",
-        backdropFilter: "blur(6px)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 16,
-      }}
-    >
-      <div style={{
-        width: `min(${width}px, 100%)`,
-        maxHeight: "calc(100vh - 48px)",
-        overflowY: "auto",
-        background: "var(--bg-surface)",
-        border: "1px solid var(--border-default)",
-        borderRadius: "var(--r-md)",
-        boxShadow: "0 40px 80px -20px rgba(0,0,0,0.7)",
-        display: "flex",
-        flexDirection: "column",
-      }}>
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "18px 22px",
-          borderBottom: "1px solid var(--border-subtle)",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {icon}
-            <h2 style={{
-              margin: 0,
-              fontFamily: "var(--font-serif)",
-              fontWeight: 400,
-              fontSize: 20,
-              color: "var(--fg1)",
-              letterSpacing: "-0.01em",
-            }}>
-              {title}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            style={{
-              background: "transparent",
-              border: "none",
-              color: "var(--fg2)",
-              padding: 4,
-              borderRadius: "var(--r-sm)",
-              cursor: "pointer",
-            }}
-          >
-            <IconClose size={16} />
-          </button>
-        </div>
-        <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 18 }}>{children}</div>
-        {footer ? <div style={{ padding: "16px 22px", borderTop: "1px solid var(--border-subtle)" }}>{footer}</div> : null}
-      </div>
-    </div>
+    <Dialog title={title} icon={icon} width={width} onClose={onClose} testid="app-dialog" dismissible={dismissible} dismissOnGround={dismissOnGround}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>{children}</div>
+      {footer ? <div style={{ paddingTop: 16, marginTop: 18, borderTop: "1px solid var(--border-subtle)" }}>{footer}</div> : null}
+    </Dialog>
   );
 };
 
@@ -449,7 +453,7 @@ export const SpinnerRow = ({ caption }: { caption: string }) => (
   </div>
 );
 
-export const TxLinkRow = ({ label, hash, href }: { label: string; hash: `0x${string}`; href: string }) => (
+export const TxLinkRow = ({ label, hash, href }: { label: string; hash: string; href: string }) => (
   <div style={{
     display: "flex",
     alignItems: "center",
@@ -532,7 +536,7 @@ const TransactionOverview = ({
     padding: "10px 14px",
     background: "var(--bg-surface-2)",
   }}>
-    <Eyebrow style={{ paddingBottom: 6 }}>Transaction overview</Eyebrow>
+    <Eyebrow style={{ paddingBottom: 6 }}>Overview</Eyebrow>
     <OverviewRow
       label={mode === "supply" || mode === "withdraw" ? "Supply APY" : "Borrow APY"}
       value={fmt.pct(mode === "supply" || mode === "withdraw" ? reserve.supplyApy : reserve.borrowApy)}

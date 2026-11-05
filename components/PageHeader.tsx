@@ -1,28 +1,21 @@
 "use client";
 
-// Sticky page header. usePathname drives the active-nav highlight,
-// RainbowKit's ConnectButton.Custom drives the wallet pill (matches
-// the Rome web app's Header.WalletChip shape), and the chain pill is read-only
-// for v1 (one chain — Hadrian).
+// Sticky page header, in the shape of the Rome DEX's TopNav: the logo and product name, the pages, then on the right the health factor
+// (when there is a position), the network (read-only: one chain) and the wallet (AccountMenu). usePathname drives the active page.
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ConnectButton } from "@/components/WalletConnectButton";
-import { useChainId, useDisconnect, useSwitchChain } from "wagmi";
+import AccountMenu from "@/components/AccountMenu";
+import { Tip } from "@/components/Tip";
+import { useChainId, useSwitchChain } from "wagmi";
 import { hadrian } from "@/lib/wagmi";
-import { Button, Container, HealthFactorPill } from "@/components/primitives";
-import { fmt } from "@/lib/format";
-import {
-  IconAlert,
-  IconClose,
-  IconMenu,
-  IconWallet,
-  IconWarn,
-} from "@/components/icons";
-import { ETHIcon } from "@/components/icons";
+import { Button, Container, HealthFactorPill, NetworkLabel } from "@/components/primitives";
+import { IconAlert, IconClose, IconMenu, IconWarn } from "@/components/icons";
 import { useTheme } from "@/hooks/useTheme";
+import { ThemeRow } from "@/components/Theme";
 import type { ChainInfo } from "@/lib/types";
+import { NETWORK_LABEL } from "@/lib/brand";
 
 interface NavItem { href: string; label: string }
 
@@ -32,7 +25,6 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/liquidate", label: "Liquidate" },
   { href: "/flashloan", label: "Flash Loan" },
   { href: "/history",   label: "History" },
-  { href: "/faucet",    label: "Faucet" },
 ];
 
 export const ChainStatusDot = ({ status }: { status: ChainInfo["status"] }) => {
@@ -50,148 +42,91 @@ export const PageHeader = ({
   const pathname = usePathname();
   const walletChainId = useChainId();
   const { switchChainAsync } = useSwitchChain();
-  const { theme, toggle: onToggleTheme } = useTheme();
+  const { theme } = useTheme();
 
-  const [mobileOpen, setMobileOpen] = useState(false);
+  // The page menu (the DEX's TopNav menu): closes on navigation, on Escape (focus goes back to the button) and on a click outside the header.
+  const [menu, setMenu] = useState(false);
+  const top = useRef<HTMLElement>(null);
+  const menuBtn = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setMenu(false); }, [pathname]);
+  useEffect(() => {
+    if (!menu) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setMenu(false); menuBtn.current?.focus(); } };
+    const onPointer = (e: MouseEvent) => { if (top.current && !top.current.contains(e.target as Node)) setMenu(false); };
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onPointer);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onPointer); };
+  }, [menu]);
 
   const logomark = theme === "light" ? "/assets/logomark-purple.svg" : "/assets/logomark-white.svg";
   const wordmark = theme === "light" ? "/assets/wordmark-purple.svg" : "/assets/wordmark-white.svg";
 
   const onWrongChain = walletChainId !== 0 && walletChainId !== chain.chainId;
+  const showHf = hf != null && hf !== Infinity;
 
   return (
-    <header style={{
-      position: "sticky", top: 0, zIndex: 30,
-      background: "var(--header-bg)",
-      backdropFilter: "blur(20px)",
-      WebkitBackdropFilter: "blur(20px)",
-      borderBottom: "1px solid var(--border-subtle)",
-    }}>
+    <header ref={top} className={`top${showHf ? " hf" : ""}`} style={{ position: "sticky", top: 0, zIndex: 40 }}>
+      <div className="thread" />
       <Container max={1320}>
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 24,
-          padding: "14px 0",
-          minHeight: 72,
-        }}>
-          {/* Brand */}
-          <Link href="/" style={{ textDecoration: "none", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <img src={logomark} alt="Rome" style={{ display: "block", height: 30, width: "auto" }} />
-            <img src={wordmark} alt="Rome" style={{ display: "block", height: 30, width: "auto" }} />
-            <span className="mono" style={{
-              marginLeft: 10, fontSize: 10, color: "var(--fg2)",
-              letterSpacing: "0.12em", textTransform: "uppercase",
-              padding: "5px 8px", background: "var(--bg-surface-2)",
-              borderRadius: "var(--r-sm)", fontWeight: 500,
-            }}>Aave V3</span>
+        <div className={`nav hdr-row${showHf ? " has-hf" : ""}`}>
+          {/* Brand: the Rome logo, a thin divider and the product name in the serif (the DEX's .mark) */}
+          <Link href="/" className="mark" aria-label="Rome Aave home">
+            <img src={logomark} alt="" style={{ display: "block", height: 30, width: "auto" }} />
+            <img className="hdr-wordmark" src={wordmark} alt="Rome" style={{ display: "block", height: 30, width: "auto" }} />
+            <span className="mark-sep" aria-hidden />
+            <span className="mark-name">Aave</span>
           </Link>
 
           {/* Desktop nav */}
-          <nav style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: 16 }} className="desktop-nav">
+          <nav className="tabs desktop-nav" role="tablist">
             {NAV_ITEMS.map((item) => {
               const isActive = pathname === item.href;
               return (
-                <Link key={item.href} href={item.href}
-                  style={{
-                    fontFamily: "var(--font-sans)",
-                    fontSize: 13,
-                    fontWeight: isActive ? 500 : 400,
-                    color: isActive ? "var(--fg1)" : "var(--fg2)",
-                    textDecoration: "none",
-                    padding: "8px 14px",
-                    borderRadius: "var(--r-pill)",
-                    background: isActive ? "rgba(197, 139, 198, 0.10)" : "transparent",
-                    display: "inline-flex", alignItems: "center", gap: 6,
-                  }}>
-                  {isActive ? <span style={{ width: 5, height: 5, borderRadius: 5, background: "var(--rome-purple-tint)" }} /> : null}
+                <Link key={item.href} href={item.href} role="tab" aria-selected={isActive}
+                  aria-current={isActive ? "true" : undefined}
+                  style={{ whiteSpace: "nowrap" }}>
                   {item.label}
                 </Link>
               );
             })}
           </nav>
 
-          <div style={{ flex: 1 }} />
+          <div className="rightnav">
+            {/* Sticky HF pill */}
+            {showHf ? (
+              <Tip text="View health factor" place="below">
+                <Link href="/dashboard" aria-label={`View health factor, ${hf.toFixed(2)}`} style={{ textDecoration: "none" }}>
+                  <HealthFactorPill hf={hf} size="sm" showLabel={false} />
+                </Link>
+              </Tip>
+            ) : null}
 
-          {/* Sticky HF pill */}
-          {hf != null && hf !== Infinity ? (
-            <Link href="/dashboard" style={{ textDecoration: "none" }} title="View health factor">
-              <HealthFactorPill hf={hf} size="sm" showLabel={false} />
-            </Link>
-          ) : null}
+            {/* The network (one chain; read-only) */}
+            <span className="hdr-chain wpill" style={{ borderRadius: "var(--r-pill)", padding: "6px 12px 6px 10px", fontSize: 12.5, display: "inline-flex", alignItems: "center", gap: 8 }}>
+              <ChainStatusDot status={chain.status} />
+              <NetworkLabel tag={false} />
+            </span>
 
-          {/* Theme toggle (optional — only renders when handler provided) */}
-          {onToggleTheme ? (
-            <button onClick={onToggleTheme}
-              title={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
-              aria-label="Toggle theme"
-              style={{
-                background: "transparent",
-                border: "1px solid var(--border-default)",
-                borderRadius: "var(--r-pill)",
-                width: 32, height: 32,
-                color: "var(--fg2)",
-                display: "inline-flex", alignItems: "center", justifyContent: "center",
-                cursor: "pointer",
-              }}>
-              {theme === "light" ? (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-                </svg>
-              ) : (
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
-                  <circle cx="12" cy="12" r="4" />
-                  <path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-                </svg>
-              )}
-            </button>
-          ) : null}
+            {/* The wallet: Connect wallet, or the pill with its menu (the Theme choice sits in the menu, and beside Connect wallet) */}
+            <AccountMenu />
 
-          {/* Chain pill (read-only for v1; one chain) */}
-          <span style={{
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border-default)",
-            borderRadius: "var(--r-pill)",
-            padding: "6px 12px 6px 8px",
-            color: "var(--fg1)",
-            fontSize: 12,
-            display: "inline-flex", alignItems: "center", gap: 8,
-          }}>
-            <ChainStatusDot status={chain.status} />
-            <span>{chain.displayName}</span>
-          </span>
-
-          {/* Wallet — shape mirrors the Rome web app Header.WalletChip:
-              disconnected → primary button "Connect wallet"
-              connected    → rounded-full pill [ETH glyph] [0xabcd…1234] [✕] */}
-          <ConnectButton.Custom>
-            {({ account, chain: rkChain, openConnectModal, openChainModal, mounted }) => {
-              const ready = mounted;
-              const connected = ready && account && rkChain;
-              if (!connected) {
-                return (
-                  <Button variant="primary" size="sm" onClick={openConnectModal}>
-                    <IconWallet size={13} /> Connect wallet
-                  </Button>
-                );
-              }
-              if (rkChain.unsupported) {
-                return (
-                  <Button variant="danger" size="sm" onClick={openChainModal}>
-                    Wrong network
-                  </Button>
-                );
-              }
-              return <WalletChip addr={account.address} />;
-            }}
-          </ConnectButton.Custom>
-
-          {/* Mobile menu trigger */}
-          <button onClick={() => setMobileOpen(true)} className="mobile-nav-trigger"
-            style={{ background: "transparent", border: "1px solid var(--border-default)", borderRadius: "var(--r-pill)", padding: 8, color: "var(--fg1)", display: "none", cursor: "pointer" }}>
-            <IconMenu size={16} />
-          </button>
+            {/* The page menu button (narrow screens; the page links move into the menu panel) */}
+            <div className="menu-root">
+              <button ref={menuBtn} type="button" className="menu-btn" data-testid="menu-button" aria-label="Menu" aria-expanded={menu}
+                aria-controls={menu ? "site-menu" : undefined} onClick={() => setMenu((m) => !m)}>
+                {menu ? <IconClose size={16} /> : <IconMenu size={16} />}
+              </button>
+            </div>
+          </div>
         </div>
+        {menu && (
+          <nav className="menu-panel" id="site-menu" aria-label="Pages">
+            {NAV_ITEMS.map((item) => (
+              <Link key={item.href} href={item.href} aria-current={pathname === item.href ? "page" : undefined} onClick={() => setMenu(false)}>{item.label}</Link>
+            ))}
+            <ThemeRow />
+          </nav>
+        )}
       </Container>
 
       {/* Liquidatable banner */}
@@ -216,12 +151,12 @@ export const PageHeader = ({
 
       {/* Wrong chain banner */}
       {onWrongChain ? (
-        <div style={{ background: "rgba(232, 160, 78, 0.10)", borderBottom: "1px solid rgba(232, 160, 78, 0.32)" }}>
+        <div style={{ background: "color-mix(in srgb, var(--warn) 12%, transparent)", borderBottom: "1px solid color-mix(in srgb, var(--warn) 40%, transparent)" }}>
           <Container max={1320}>
             <div style={{ padding: "10px 0", display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: "var(--hf-warn)" }}>
               <IconAlert size={16} />
               <span style={{ color: "var(--fg1)" }}>
-                Wrong network. Switch to <b>{chain.displayName}</b> to use Rome Aave.
+                Wrong network. Switch to <b>{NETWORK_LABEL}</b>.
               </span>
               <span style={{ flex: 1 }} />
               <Button variant="secondary" size="xs" onClick={() => void switchChainAsync({ chainId: hadrian.id })}>
@@ -232,121 +167,28 @@ export const PageHeader = ({
         </div>
       ) : null}
 
-      {mobileOpen ? <MobileMenu logomark={logomark} wordmark={wordmark} onClose={() => setMobileOpen(false)} pathname={pathname} /> : null}
-
       <style>{`
-        @media (max-width: 1023px) {
-          .desktop-nav { display: none !important; }
-          .mobile-nav-trigger { display: inline-flex !important; }
+        .menu-root, .menu-panel { display: none; }
+        @media (max-width: 1230px) {
+          .desktop-nav, .hdr-theme { display: none !important; }
+          .menu-root { display: block; }
+          .menu-panel { display: flex; }
         }
-      `}</style>
+        @media (max-width: 1366px) {
+          .top.hf .desktop-nav, .top.hf .hdr-theme { display: none !important; }
+          .top.hf .menu-root { display: block; }
+          .top.hf .menu-panel { display: flex; }
+        }
+        .menu-panel { flex-direction: column; padding: 6px 16px 14px; border-top: 1px solid var(--line); max-height: calc(100dvh - 76px); overflow-y: auto; overscroll-behavior: contain; }
+        .menu-panel a { padding: 13px 4px; font-size: 16px; font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--line-2); text-decoration: none; }
+        .menu-panel a[aria-current="page"] { color: var(--ink); font-weight: 600; }
+        @media (max-width: 767px) {
+          .hdr-chain { display: none !important; }
+        }
+`}</style>
     </header>
   );
 };
-
-// WalletChip — direct shape port of the Rome web app's Header.WalletChip:
-// rounded-full pill containing [chain glyph] [0xabcd…1234] [✕]. The ✕
-// disconnects (matches the Rome web app's onDisconnect={wallet.disconnectEVM}).
-// Click the addr opens RainbowKit's account modal so users can switch
-// wallets — the Rome web app's chip opens the WalletModal for the same purpose.
-const WalletChip = ({ addr }: { addr: string }) => {
-  const { disconnect } = useDisconnect();
-  return (
-    <ConnectButton.Custom>
-      {({ openAccountModal }) => (
-        <div style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "6px",
-          borderRadius: 999,
-          background: "var(--bg-surface)",
-          border: "1px solid var(--border-default)",
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--fg2)",
-        }}>
-          <ETHIcon size={20} />
-          <button onClick={openAccountModal} style={{
-            background: "transparent", border: "none",
-            color: "var(--fg1)", padding: "0 4px",
-            fontFamily: "var(--font-mono)", fontSize: 11,
-            cursor: "pointer",
-          }}>
-            {fmt.addr(addr, 4, 4)}
-          </button>
-          <button
-            type="button"
-            aria-label="Disconnect"
-            title="Disconnect"
-            onClick={() => disconnect()}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 20,
-              height: 20,
-              borderRadius: 999,
-              border: "none",
-              background: "transparent",
-              color: "var(--fg3)",
-              cursor: "pointer",
-              padding: 0,
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.background = "var(--bg-surface-2)";
-              e.currentTarget.style.color = "var(--fg1)";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.background = "transparent";
-              e.currentTarget.style.color = "var(--fg3)";
-            }}
-          >
-            <IconClose size={12} />
-          </button>
-        </div>
-      )}
-    </ConnectButton.Custom>
-  );
-};
-
-const MobileMenu = ({ logomark, wordmark, onClose, pathname }: { logomark: string; wordmark: string; onClose: () => void; pathname: string | null }) => (
-  <div style={{
-    position: "fixed", inset: 0, zIndex: 60,
-    background: "var(--bg-canvas)",
-    display: "flex", flexDirection: "column",
-  }}>
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 20px", borderBottom: "1px solid var(--border-subtle)" }}>
-      <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <img src={logomark} alt="Rome" style={{ height: 24, width: "auto" }} />
-        <img src={wordmark} alt="Rome" style={{ height: 24, width: "auto" }} />
-        <span className="mono" style={{ marginLeft: 4, fontSize: 10, color: "var(--fg2)", letterSpacing: "0.12em", textTransform: "uppercase", padding: "4px 7px", background: "var(--bg-surface-2)", borderRadius: "var(--r-sm)", fontWeight: 500 }}>Aave V3</span>
-      </span>
-      <button onClick={onClose} style={{ background: "transparent", border: "1px solid var(--border-default)", borderRadius: "var(--r-pill)", padding: 8, color: "var(--fg1)", cursor: "pointer" }}>
-        <IconClose size={16} />
-      </button>
-    </div>
-    <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 4 }}>
-      {NAV_ITEMS.map((item) => {
-        const isActive = pathname === item.href;
-        return (
-          <Link key={item.href} href={item.href} onClick={onClose}
-            style={{
-              fontFamily: "var(--font-serif)",
-              fontSize: 28,
-              color: isActive ? "var(--fg1)" : "var(--fg2)",
-              textDecoration: "none",
-              padding: "10px 0",
-              letterSpacing: "-0.01em",
-              borderBottom: "1px solid var(--border-subtle)",
-            }}>
-            {item.label}
-          </Link>
-        );
-      })}
-    </div>
-  </div>
-);
 
 // ────────────── Footer ──────────────
 
@@ -367,19 +209,16 @@ export const PageFooter = ({ chain }: { chain: ChainInfo }) => {
             <img src={logomark} alt="Rome" style={{ height: 18, width: "auto" }} />
             <img src={wordmark} alt="Rome" style={{ height: 18, width: "auto", opacity: 0.9 }} />
             <span className="mono" style={{ marginLeft: 4, fontSize: 9, color: "var(--fg2)", letterSpacing: "0.12em", textTransform: "uppercase", padding: "3px 6px", background: "var(--bg-surface-2)", borderRadius: "var(--r-sm)" }}>Aave V3</span>
-            <span style={{ marginLeft: 8, fontSize: 13, color: "var(--fg2)" }}>
-              Solana cluster:{" "}
-              <span className="mono" style={{ color: "var(--fg1)" }}>{chain.solanaCluster}</span>
-            </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 12, color: "var(--fg2)" }}>
             <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <ChainStatusDot status={chain.status} />
-              {chain.displayName} {chain.status}
+              <NetworkLabel />
+              {chain.status !== "live" ? <span>{chain.status}</span> : null}
             </span>
-            <a href="https://github.com/aave/aave-v3-origin" target="_blank" rel="noreferrer"
+            <a href="https://github.com/rome-protocol/rome-aave-v3" target="_blank" rel="noreferrer"
               style={{ color: "var(--fg2)", textDecoration: "none", borderBottom: "1px solid var(--border-subtle)" }}>
-              GitHub ↗
+              Contracts ↗
             </a>
           </div>
         </div>

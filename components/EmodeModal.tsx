@@ -92,10 +92,12 @@ const EmodeModalInner = ({
       open
       onClose={onClose}
       title="Switch E-mode"
+      dismissible={action.phase !== "executing"}
+      dismissOnGround={false}
       icon={
         <div style={{
           width: 28, height: 28, borderRadius: 28,
-          background: "rgba(197, 139, 198, 0.10)",
+          background: "color-mix(in srgb, var(--bridge) 12%, transparent)",
           border: "1px solid var(--border-brand)",
           display: "flex", alignItems: "center", justifyContent: "center",
           color: "var(--fg-brand)",
@@ -106,9 +108,8 @@ const EmodeModalInner = ({
       width={520}
     >
       <p style={{ margin: 0, fontSize: 13, color: "var(--fg2)" }}>
-        E-mode unlocks higher LTV for correlated assets. While active, only
-        the category&rsquo;s collateral counts toward your borrow power and
-        only its borrowable assets can be borrowed.
+        Higher LTV for correlated assets. While active, only this category&rsquo;s
+        collateral counts and only its assets can be borrowed.
       </p>
 
       {(action.phase === "editing" || action.phase === "error") ? (
@@ -126,7 +127,7 @@ const EmodeModalInner = ({
                   }}
                   style={{
                     textAlign: "left",
-                    background: checked ? "rgba(197, 139, 198, 0.10)" : "var(--bg-surface-2)",
+                    background: checked ? "color-mix(in srgb, var(--bridge) 12%, transparent)" : "var(--bg-surface-2)",
                     border: `1px solid ${checked ? "var(--border-brand)" : "var(--border-subtle)"}`,
                     borderRadius: "var(--r-md)",
                     padding: 14,
@@ -157,7 +158,7 @@ const EmodeModalInner = ({
                       </div>
                     ) : c.id === 0 ? (
                       <div style={{ fontSize: 12, color: "var(--fg2)", marginTop: 4 }}>
-                        Standard LTV. All assets borrowable per their reserve config.
+                        Standard LTV. Normal borrow rules.
                       </div>
                     ) : null}
                   </div>
@@ -226,6 +227,9 @@ const EmodeModalInner = ({
 
           {action.phase === "error" && action.error ? (
             <Banner variant="danger" icon={<IconAlert size={16} />}>{action.error}</Banner>
+          ) : null}
+          {action.phase === "error" && executeExplorer ? (
+            <TxLinkRow label="E-mode transaction" hash={action.executeHash!} href={executeExplorer} />
           ) : null}
 
           <Button

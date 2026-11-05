@@ -1,0 +1,397 @@
+/* The Rome app's look for the DEX, behind the "theme" feature switch (lib/features.mjs). Loaded after globals.css and ui.css.
+   Every rule that changes the look sits under :root[data-rome-theme], which only exists while the switch is on and the Theme provider has
+   put the choice on <html> (components/Theme.tsx, lib/theme.mjs). With the switch off none of them match, so the DEX is as it was.
+
+   ONE SYSTEM, TWO PALETTES. DARK is "Aurora": a deep violet field with three coloured lights, glass cards with a
+   lit edge, a gradient primary button. LIGHT is "Daylight": Rome's Light Pink, Light Blue and Lavender as the colour field, frosted white cards,
+   a glossy plum primary button. Both are built from the same rules below; a palette only sets the tokens (colours, the field, the card glass).
+   The palettes may use colours beyond the five brand colours (Aurora's deeper violets and brighter blue) as long as they read as Rome.
+   The test that guards them is readability, not brand mixing: lib/themePalette.test.mjs parses this file and checks every text/background pair
+   and every hover pair at WCAG AA (4.5:1 text, 3:1 large text and UI edges), including text over the brightest part of the background field.
+   Every colour a test reads is a plain #RRGGBB (a glass surface is written as the solid colour it composites to); the translucent values
+   (rgba) are only used for hairlines, shadows and the glass itself.
+
+   One system in each mode: one page field (--ground + --field), one card (glass), one inset surface for inputs and rows (--panel-2), one border
+   (--line, hairlines --line-2), one card radius (--rad-card), one control radius (--rad-ctl), pills for buttons and chips, one loud primary
+   (--btn-grad: the block primary button and the header Connect button only), one flat button colour for the rest, one chip (--chip-bg),
+   one chosen state (--sel-*). */
+
+
+/* Chart colours (canvas charts read these). Off, they are the colours the charts always had. */
+:root {
+  --chart-ink: rgba(255,255,255,.35); --chart-grid: rgba(255,255,255,.06);
+  --chart-cursor: rgba(255,255,255,.25); --chart-cursor-bar: rgba(255,255,255,.07);
+  --chart-a: #B45CE6; --chart-b: #52A6DE; --chart-up: #21C08A; --chart-down: #F0616A;
+}
+
+/* ───────── what both palettes share: the radii and the status colours' roles ───────── */
+:root[data-rome-theme] {
+  --rad-card: 22px; /* cards, dialogs, menus, popovers */
+  --rad-ctl: 12px;  /* inputs, rows, boxes inside a card, icon buttons; buttons and chips are pills (999px) */
+  /* token letter marks (a token with no logo): white letters on these, each 4.5:1 or better in both modes */
+  --mark-0: #5E0A60;
+  --mark-1: #4C084E;
+  --mark-2: #7E3B80;
+  --mark-3: #1F6C9C;
+  --mark-4: #1F7A3F;
+  --mark-5: #726774;
+}
+
+
+/* ───────── LIGHT = "Daylight": a pink, blue and lavender field, frosted white cards, glossy plum ───────── */
+:root[data-rome-theme="light"] {
+  color-scheme: light;
+  --ground: #EFEBFB;
+  --panel: #FFFFFF;
+  --panel-2: #F5F2FC;       /* inputs, rows and boxes inside a card */
+  --panel-3: #ECE7F8;       /* a pressed or raised control */
+  --line: #E1DAF1;
+  --line-2: #EDE8F8;
+  --line-strong: #B9AEC9;   /* a hovered input, a secondary button's edge, a tooltip's edge */
+  --ink: #1A0420;
+  --muted: #55446A;
+  --faint: #5F4E70;         /* small labels and placeholders; 4.5:1 or better even over the pink and blue peaks of the field */
+  --bridge: #5E0A60;        /* links, ticks, arrows, hover borders */
+  --bridge-2: #4A0750;
+  --btn: #6A1470;           /* the flat button (row buttons, dialog buttons) */
+  --btn-hover: #7A2380;
+  --btn-edge: #4A0750;
+  --btn-angle: 180deg;
+  --btn-1: #8F2F93; --btn-2: #6A1470; --btn-3: #4F0A54;        /* the one loud primary: glossy plum, top-lit */
+  --btn-h1: #A13CA5; --btn-h2: #7A2380; --btn-h3: #5E0A60;     /* its hover */
+  --on-btn: #FFFFFF;
+  --btn2-bg: #FFFFFF;       /* the one secondary button */
+  --btn2-edge: #8E80A3;     /* the edge of a secondary button, chip or small control: 3:1 where the edge alone marks it (white on white) */
+  --btn2-hover: #FBEAF6;
+  --chip-bg: #FFFFFF;       /* the one chip */
+  --sel-bg: #F9DDF0;        /* the chosen tab, chip, segment */
+  --sel-ink: #4A0750;
+  --sel-line: #8E4F91;      /* its edge: reaches 3:1 against the page, which the pale pill alone does not */
+  --sel-soft: #F9E3F2;      /* a chosen row in a list */
+  --hover: #FBEAF6;         /* a hovered row or link */
+  --ring: #5E0A60;          /* the focus ring */
+  --tip-bg: #FFFFFF;
+  --tip-line: #B9AEC9;
+  --top-bg: rgba(244,240,252,.74);
+  --overlay: rgba(26,4,32,.5);
+  --shadow-lg: 0 30px 70px -24px rgba(94,10,96,.35);
+  /* the field behind the page: the three lights, and the three solid colours they reach at their strongest (the test reads these) */
+  --field: radial-gradient(55% 50% at 8% 0%, rgba(249,196,232,.85), transparent 70%), radial-gradient(50% 45% at 98% 6%, rgba(176,222,245,.85), transparent 70%), radial-gradient(65% 50% at 55% 108%, rgba(200,194,240,.9), transparent 70%);
+  --field-dots: none;
+  --field-1: #F8CAEB; --field-2: #B9E0F6; --field-3: #CCC6F1;
+  --thread: linear-gradient(90deg, #7CC4EC, #5E0A60 50%, #F27CCB);
+  /* the card: frosted white with a lit edge and a long coloured shadow; --card-solid is what it falls back to without blur */
+  --card-bg: rgba(255,255,255,.74); --card-solid: #FFFFFF;
+  --card-edge: linear-gradient(145deg, #FFFFFF, rgba(255,255,255,.7) 40%, rgba(240,200,235,.9));
+  --card-shadow: 0 30px 70px -34px rgba(94,10,96,.45), 0 2px 6px -2px rgba(94,10,96,.1), inset 0 1px 0 #FFFFFF;
+  --card-blur: blur(18px) saturate(140%); --card-blur-sm: blur(10px);
+  --btn-shadow: 0 14px 26px -12px rgba(94,10,96,.85), inset 0 1px 0 rgba(255,255,255,.45), inset 0 -8px 14px -8px rgba(30,0,40,.5);
+  /* status and lane colours: 4.5:1 or better on white, the page, the inset surfaces and every light of the field (also under their own tints) */
+  --up: #156038; --up-text: #135931; --up-dim: rgba(27,122,71,.10); --up-line: rgba(27,122,71,.35);
+  --down: #8E2424; --down-dim: rgba(160,41,41,.10);
+  --warn: #8B4007;
+  --evm: #185277; --evm-dim: rgba(31,108,156,.10); --evm-line: rgba(31,108,156,.35);
+  --sol: #7A2B7E; --sol-dim: rgba(143,51,148,.10); --sol-line: rgba(143,51,148,.35);
+  /* APR: a blue, never red or pink (it sits beside a red 7-day line); the bar is its straight-scale gauge */
+  --apr: #175A85; --apr-bar: #1F6C9C; --apr-track: #E1DAF1;
+  /* the one gradient title per page: three stops, each 3:1 or better over the page and the field */
+  --title-1: #3D0A5E; --title-2: #5E0A60; --title-3: #17588A;
+  --chart-a: #5E0A60;       /* the line */
+  --chart-a-fill: #C04BC6;  /* the area under the line, fading out (top opacity below, hex alpha) */
+  --chart-a-fill-alpha: 80;
+  --chart-b: #DBEFF7;       /* the bar fill */
+  --chart-b-edge: #787988;  /* the bar's thin edge: a Light Blue bar on white needs it to reach 3:1 */
+  --chart-ink: #5F4E70;
+  --chart-grid: #E7E1F4;
+  --chart-cursor: #B9AEC9;
+  --chart-cursor-bar: rgba(94,10,96,.07);
+  --chart-up: #1B7A47; --chart-down: #A02929;
+}
+
+/* ───────── DARK = "Aurora": a deep violet field with three lights, glass cards, a gradient primary ───────── */
+:root[data-rome-theme="dark"] {
+  color-scheme: dark;
+  --ground: #0A0421;
+  --panel: #1B0C40;         /* menus and dialogs (opaque); cards are glass */
+  --panel-2: #120838;       /* dark wells inside the glass: inputs, rows, boxes */
+  --panel-3: #241656;       /* a pressed or raised control */
+  --line: rgba(255,255,255,.15);
+  --line-2: rgba(255,255,255,.08);
+  --line-strong: rgba(255,255,255,.32);
+  --ink: #FFFFFF;
+  --muted: #CFC5EC;
+  --faint: #B9AEE0;         /* small labels and placeholders; 4.5:1 or better under the brightest light */
+  --bridge: #F3BFFF;        /* Light Pink pushed to lilac: links, ticks */
+  --bridge-2: #C7A9FF;
+  --btn: #7A35D8;           /* the flat button (row buttons, dialog buttons) */
+  --btn-hover: #8A45E6;
+  --btn-edge: rgba(255,255,255,.4);
+  --btn-angle: 135deg;
+  --btn-1: #A62BC9; --btn-2: #7430DC; --btn-3: #4752D8;        /* the one loud primary: violet to blue gradient */
+  --btn-h1: #B02ED2; --btn-h2: #7C36E6; --btn-h3: #4F5AE4;     /* its hover: lighter, and still 4.5:1 with white */
+  --on-btn: #FFFFFF;
+  --btn2-bg: #261A58;       /* the one secondary button (glass, as the solid it composites to) */
+  --btn2-edge: #7C6CB0;     /* its edge: 3:1 on the dialog and the wells */
+  --btn2-hover: #33256B;
+  --chip-bg: #261A58;
+  --sel-bg: #F1D6FF;        /* the chosen state is a lit lilac pill */
+  --sel-ink: #26093F;
+  --sel-line: #F1D6FF;
+  --sel-soft: #3A2370;
+  --hover: #1F1250;
+  --ring: #F3BFFF;
+  --tip-bg: #2A1660;
+  --tip-line: rgba(255,255,255,.25);
+  --top-bg: rgba(12,5,36,.58);
+  --overlay: rgba(6,2,22,.72);
+  --shadow-lg: 0 30px 80px -20px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.1);
+  /* the field: a violet, a blue and a magenta light and a faint dot grid; --field-1 is the violet at its strongest under a glass card */
+  --field: radial-gradient(60% 55% at 12% -5%, rgba(124,58,237,.45), transparent 70%), radial-gradient(48% 45% at 96% 8%, rgba(56,160,230,.26), transparent 70%), radial-gradient(70% 55% at 50% 108%, rgba(214,60,240,.34), transparent 70%);
+  --field-dots: radial-gradient(circle, rgba(255,255,255,.075) 1px, transparent 1.4px);
+  --field-1: #50338A; --field-2: #2D4265; --field-3: #612E76;
+  --thread: linear-gradient(90deg, #6CC4FF, #B56CFF 50%, #FF7AD9);
+  --card-bg: linear-gradient(160deg, rgba(255,255,255,.10), rgba(255,255,255,.035) 60%); --card-solid: #1B0C40;
+  --card-edge: linear-gradient(145deg, rgba(255,255,255,.5), rgba(255,255,255,.05) 38%, rgba(232,150,255,.45));
+  --card-shadow: inset 0 1px 0 rgba(255,255,255,.2), 0 30px 70px -30px rgba(0,0,0,.75), 0 0 60px -30px rgba(160,90,255,.5);
+  --card-blur: blur(22px) saturate(150%); --card-blur-sm: blur(12px);
+  --btn-shadow: 0 10px 34px -8px rgba(176,70,255,.85), inset 0 1px 0 rgba(255,255,255,.45), inset 0 -10px 18px -10px rgba(60,10,140,.6);
+  /* status and lane colours: 4.5:1 or better on every dark surface and every light of the field (also under their own tints) */
+  --up: #3DE0A8; --up-text: #6EF0BE; --up-dim: rgba(61,224,168,.14); --up-line: rgba(61,224,168,.4);
+  --down: #FFB0BF; --down-dim: rgba(255,123,149,.14);
+  --warn: #FFC15E;
+  --evm: #89D0FF; --evm-dim: rgba(108,196,255,.14); --evm-line: rgba(108,196,255,.4);
+  --sol: #EEB2FF; --sol-dim: rgba(229,139,255,.14); --sol-line: rgba(229,139,255,.4);
+  --apr: #8FD3FF; --apr-bar: #6CC4FF; --apr-track: #2A1D5C;
+  --title-1: #FFFFFF; --title-2: #F3BFFF; --title-3: #A9D8FF;
+  --chart-a: #E9A8FF;
+  --chart-a-fill: #8E3BE0;
+  --chart-a-fill-alpha: D0;
+  --chart-b: #8FD3FF;
+  --chart-ink: #B9AEE0;
+  --chart-grid: rgba(255,255,255,.08);
+  --chart-cursor: rgba(255,255,255,.3);
+  --chart-cursor-bar: rgba(255,255,255,.08);
+  --chart-up: #3DE0A8; --chart-down: #FF7B95;
+}
+
+/* ───────── what both themes change ───────── */
+:root[data-rome-theme] body { background: var(--ground); background-image: none; color: var(--ink); }
+:root[data-rome-theme] .top { background: var(--top-bg); }
+:root[data-rome-theme] .foot { background: transparent; }
+:root[data-rome-theme] .mark-sep { background: var(--line); }
+
+/* Serif page titles and section titles (rome-ui: Untitled Serif for headlines). The serif has one weight, so no bold. */
+:root[data-rome-theme] h1, :root[data-rome-theme] h2, :root[data-rome-theme] h3 { font-family: var(--serif); font-weight: 400; letter-spacing: -.01em; }
+
+/* Focus ring: 2 px, 2 px off (Rome Purple on light, Light Pink on dark). Inputs show it on their own border. */
+:root[data-rome-theme] button:focus-visible, :root[data-rome-theme] a:focus-visible, :root[data-rome-theme] [role="button"]:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+/* One card: one radius; the glass, the lit edge and the shadow come from the palette (see "the look" at the end). */
+:root[data-rome-theme] .card, :root[data-rome-theme] .confirm-modal, :root[data-rome-theme] .account-menu, :root[data-rome-theme] .msel-list, :root[data-rome-theme] .pf-pop { border-radius: var(--rad-card); }
+
+/* One input (every field, the search box, the amount boxes, the select-like buttons): inset surface, thin border, one radius; the border darkens on hover and shows the ring colour when focused. */
+:root[data-rome-theme] .in, :root[data-rome-theme] .tsearch, :root[data-rome-theme] .amount-row, :root[data-rome-theme] .tokenrow, :root[data-rome-theme] .market-select,
+:root[data-rome-theme] .msel-btn, :root[data-rome-theme] .pf-custom, :root[data-rome-theme] .tbtn-block { background: var(--panel-2); border: 1px solid var(--btn2-edge); border-radius: var(--rad-ctl); }
+:root[data-rome-theme] .in:hover, :root[data-rome-theme] .amount-row:hover, :root[data-rome-theme] .market-select:hover, :root[data-rome-theme] .msel-btn:hover { border-color: var(--ring); }
+:root[data-rome-theme] .in:focus, :root[data-rome-theme] .tsearch:focus-within, :root[data-rome-theme] .amount-row:focus-within, :root[data-rome-theme] .pf-custom:focus-within,
+:root[data-rome-theme] .msel-btn:focus-visible, :root[data-rome-theme] .msel-btn[aria-expanded="true"], :root[data-rome-theme] .market-select:focus-visible { border-color: var(--ring); box-shadow: 0 0 0 1px var(--ring); }
+:root[data-rome-theme] .market-select:hover:not(:focus-visible) { border-color: var(--ring); }
+/* Controls styled outside this file (the Pools search, the DCA inputs, the pool page's fee-tier chips and price flip) take the same 3:1 edge;
+   their hover and focus repeat the ring here, because the base rule above outranks the plain-CSS hover. The current tier keeps its own edge. */
+:root[data-rome-theme] .pools-search input, :root[data-rome-theme] .sched-f input, :root[data-rome-theme] .liq-tier:not([aria-current="page"]), :root[data-rome-theme] .liq-flip { border-color: var(--btn2-edge); }
+:root[data-rome-theme] .pools-search input:focus-visible, :root[data-rome-theme] .sched-f input:focus, :root[data-rome-theme] .liq-tier:not([aria-current="page"]):hover, :root[data-rome-theme] .liq-flip:hover { border-color: var(--ring); }
+:root[data-rome-theme] .in::placeholder, :root[data-rome-theme] .tsearch input::placeholder { color: var(--faint); }
+/* the boxes inside a card that hold information, on the same inset surface and radius */
+:root[data-rome-theme] .note, :root[data-rome-theme] .meta, :root[data-rome-theme] .route, :root[data-rome-theme] .dual-lane-bar, :root[data-rome-theme] .liq-lane-bar,
+:root[data-rome-theme] .chooser-item, :root[data-rome-theme] .am-addr, :root[data-rome-theme] .kv, :root[data-rome-theme] .lane-toggle button { border-radius: var(--rad-ctl); }
+:root[data-rome-theme] .note, :root[data-rome-theme] .meta, :root[data-rome-theme] .route, :root[data-rome-theme] .dual-lane-bar, :root[data-rome-theme] .liq-lane-bar, :root[data-rome-theme] .chooser-item, :root[data-rome-theme] .am-addr { background: var(--panel-2); border-color: var(--line); }
+:root[data-rome-theme] .chooser-item { border-color: var(--btn2-edge); }
+:root[data-rome-theme] .chooser-item:hover { border-color: var(--ring); }
+:root[data-rome-theme] .kv { background: var(--line); }
+:root[data-rome-theme] .kv .c { background: var(--panel); }
+:root[data-rome-theme] .menu-btn, :root[data-rome-theme] .dlg-close, :root[data-rome-theme] .am-icon { border-radius: var(--rad-ctl); background: var(--panel-2); border: 1px solid var(--btn2-edge); color: var(--muted); }
+:root[data-rome-theme] .menu-btn { color: var(--ink); }
+:root[data-rome-theme] .menu-btn:hover, :root[data-rome-theme] .dlg-close:hover, :root[data-rome-theme] .am-icon:hover { border-color: var(--ring); color: var(--ink); }
+:root[data-rome-theme] .wpill { background: var(--chip-bg); border-color: var(--btn2-edge); }
+:root[data-rome-theme] .wpill:hover { border-color: var(--ring); }
+
+/* One primary button: solid Rome Purple, white text, pill. One secondary button: the secondary surface, ink text, thin strong border, pill. */
+:root[data-rome-theme] .btn { background: var(--btn); color: var(--on-btn); border: 1px solid var(--btn-edge); border-radius: 999px; }
+:root[data-rome-theme] .btn:hover { background: var(--btn-hover); filter: none; }
+:root[data-rome-theme] .btn:disabled:hover { background: var(--btn); }
+:root[data-rome-theme] .btn.ghost { background: var(--btn2-bg); color: var(--ink); border: 1px solid var(--btn2-edge); }
+:root[data-rome-theme] .btn.ghost:hover { background: var(--btn2-hover); }
+:root[data-rome-theme] .confirm-modal .modal-actions .btn { border-radius: 999px; }
+
+/* One chip (token chip, fee-tier chip, amount chip, priority-fee chip, hop, small buttons): the chip surface, thin border, pill. Chosen = the chosen state. */
+:root[data-rome-theme] .chip, :root[data-rome-theme] .tier-chip, :root[data-rome-theme] .tbtn, :root[data-rome-theme] .pf-chip, :root[data-rome-theme] .token-pill, :root[data-rome-theme] .tselect,
+:root[data-rome-theme] .hop, :root[data-rome-theme] .balance-row button, :root[data-rome-theme] .flip-inline, :root[data-rome-theme] .swap-flip button { background: var(--chip-bg); border: 1px solid var(--btn2-edge); }
+:root[data-rome-theme] .tbtn-block { border-radius: var(--rad-ctl); background: var(--panel-2); }
+:root[data-rome-theme] .swap-flip button { border-radius: 50%; border-width: 1px; }
+:root[data-rome-theme] .chip:hover, :root[data-rome-theme] .tier-chip:hover, :root[data-rome-theme] .tbtn:hover, :root[data-rome-theme] .tbtn:focus-visible, :root[data-rome-theme] .pf-chip:hover,
+:root[data-rome-theme] .pf-chip:focus-visible, :root[data-rome-theme] .pf-chip[aria-expanded="true"], :root[data-rome-theme] .balance-row button:hover, :root[data-rome-theme] .flip-inline:hover, :root[data-rome-theme] .swap-flip button:hover { border-color: var(--ring); }
+:root[data-rome-theme] .tier-chip.active, :root[data-rome-theme] .best-badge { background: var(--sel-bg); border-color: var(--sel-line); color: var(--sel-ink); }
+:root[data-rome-theme] .best-badge { border: 0; }
+:root[data-rome-theme] .tier-chip.active { font-weight: 600; }
+
+/* One chosen state: the chosen tab, segment and chip are the sel colours; a chosen row in a list is the soft one with a tick in the accent colour. */
+:root[data-rome-theme] .tabs a { border-radius: 999px; }
+:root[data-rome-theme] .tabs a:hover { background: var(--hover); color: var(--ink); }
+:root[data-rome-theme] .tabs a[aria-current="true"] { background: var(--sel-bg); color: var(--sel-ink); }
+/* the containers only: a <button class="seg"> inside .seg-ctrl keeps globals.css (no border, clear background) */
+:root[data-rome-theme] div.seg, :root[data-rome-theme] .seg-ctrl { background: var(--panel-2); border: 1px solid var(--btn2-edge); border-radius: 999px; }
+:root[data-rome-theme] .seg button { border-radius: 999px; }
+:root[data-rome-theme] .seg button[aria-selected="true"], :root[data-rome-theme] .seg-ctrl .seg.on { background: var(--sel-bg); color: var(--sel-ink); box-shadow: none; }
+:root[data-rome-theme] .trow[aria-pressed="true"], :root[data-rome-theme] .msel-item[aria-checked="true"] { background: var(--sel-soft); }
+:root[data-rome-theme] .trow:hover, :root[data-rome-theme] .trow:focus-visible, :root[data-rome-theme] .msel-item:hover, :root[data-rome-theme] .msel-item:focus-visible,
+:root[data-rome-theme] .am-item:hover, :root[data-rome-theme] .am-item:focus-visible, :root[data-rome-theme] .tbl tbody tr:hover td { background: var(--hover); }
+:root[data-rome-theme] .msel-item, :root[data-rome-theme] .am-item { border-radius: var(--rad-ctl); }
+:root[data-rome-theme] .am-icon { color: var(--muted); }
+
+/* Menus, dialogs and popovers */
+:root[data-rome-theme] .account-menu, :root[data-rome-theme] .msel-list, :root[data-rome-theme] .pf-pop, :root[data-rome-theme] .confirm-modal { background: var(--panel); border-color: var(--line); box-shadow: var(--shadow-lg); }
+:root[data-rome-theme] .confirm-modal-overlay { background: var(--overlay); }
+:root[data-rome-theme] .tip-bubble { background: var(--tip-bg); border-color: var(--tip-line); color: var(--ink); box-shadow: var(--shadow-lg); }
+
+/* Tables and lists: the one hairline */
+:root[data-rome-theme] .tbl td, :root[data-rome-theme] .trow, :root[data-rome-theme] .kv-row, :root[data-rome-theme] .leg, :root[data-rome-theme] .act-row { border-color: var(--line-2); }
+
+/* Links and accents use the accent colour; the lane badges keep the lane colours */
+:root[data-rome-theme] .journey-toggle, :root[data-rome-theme] .act-link, :root[data-rome-theme] .eyebrow a, :root[data-rome-theme] .ci-act { color: var(--bridge); }
+:root[data-rome-theme] .act-link:hover, :root[data-rome-theme] .journey-toggle:hover { color: var(--ink); text-decoration: underline; }
+
+/* Token marks (a token with no logo): white letters on the six brand-purple, blue and green marks above */
+:root[data-rome-theme] .tmark { color: #fff; }
+:root[data-rome-theme] .tmark.c0 { background: var(--mark-0); } :root[data-rome-theme] .tmark.c1 { background: var(--mark-1); } :root[data-rome-theme] .tmark.c2 { background: var(--mark-2); }
+:root[data-rome-theme] .tmark.c3 { background: var(--mark-3); } :root[data-rome-theme] .tmark.c4 { background: var(--mark-4); } :root[data-rome-theme] .tmark.c5 { background: var(--mark-5); }
+
+/* Notes, warnings and step states, off the status colours instead of fixed reds and greens */
+:root[data-rome-theme] .note.ok { background: linear-gradient(var(--up-dim), var(--up-dim)), var(--panel-2); border-color: var(--up-line); color: var(--up-text); }
+:root[data-rome-theme] .note.err, :root[data-rome-theme] .tnote-bad { border-color: color-mix(in srgb, var(--down) 35%, transparent); }
+/* the tint is laid over the solid well, not the glass card, so the text reads the same wherever the card sits over the field */
+:root[data-rome-theme] .note.err { background: linear-gradient(var(--down-dim), var(--down-dim)), var(--panel-2); color: var(--down); }
+:root[data-rome-theme] .tnote-bad { background: linear-gradient(var(--down-dim), var(--down-dim)), var(--panel-2); color: var(--down); }
+/* the "live" tick sits straight on the field, with no card behind it */
+:root[data-rome-theme] .provenance .live { color: var(--up-text); }
+/* the ghost button inside an error note (Try again): its edge is the error colour, 3:1 on the note's tint where --btn2-edge is not */
+:root[data-rome-theme] .note.err .btn.ghost { border-color: var(--down); }
+:root[data-rome-theme] .sample-tag, :root[data-rome-theme] .connect-prompt { border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+:root[data-rome-theme] .leg[data-flow-state="done"] .dot { background: var(--up-dim); border-color: color-mix(in srgb, var(--up) 40%, transparent); }
+:root[data-rome-theme] .leg[data-flow-state="failed"] .dot { background: var(--down-dim); color: var(--down); border-color: color-mix(in srgb, var(--down) 40%, transparent); }
+:root[data-rome-theme] .atomtag.flow-stopped { color: var(--down); }
+:root[data-rome-theme] .leg[data-flow-state="active"] .dot { animation: none; }
+
+/* The logo: the wordmark file is purple, shown as it is on light and turned white on dark (rome-ui .rome-wordmark) */
+:root[data-rome-theme="light"] .rome-wordmark { filter: none; }
+
+/* ───────── the Theme choice (the Rome app's account-menu Theme row) ───────── */
+.theme-row { padding: 10px 6px 6px; margin-top: 6px; border-top: 1px solid var(--line-2); }
+.theme-row .eyebrow { display: block; padding-left: 2px; margin-bottom: 8px; }
+.theme-choice { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 3px; background: var(--panel-2); border: 1px solid var(--btn2-edge); border-radius: 999px; }
+.theme-choice button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 7px 8px; border-radius: 999px; border: none; background: transparent; color: var(--ink); font-family: var(--sans); font-size: 12px; font-weight: 500; transition: all 140ms var(--ease); min-height: 32px; }
+.theme-choice button[aria-pressed="true"] { background: var(--sel-bg); color: var(--sel-ink); }
+.menu-panel .theme-row { border-top: 0; margin-top: 0; padding: 14px 4px 4px; }
+.theme-pop { min-width: 260px; }
+.theme-pop .theme-row { border-top: 0; margin-top: 0; }
+/* The Theme button is one more control in the header, which needs 48 px more: while the switch is on the page links move into the menu 70 px
+   earlier (the same menu rules as globals.css at 1160 px), and the menu carries the choice. */
+@media (max-width: 1230px) { .theme-btn-root { display: none; } }
+@media (min-width: 1161px) and (max-width: 1230px) {
+  :root[data-rome-theme] .nav { gap: 10px; }
+  :root[data-rome-theme] .tabs { display: none; }
+  :root[data-rome-theme] .menu-root { display: block; }
+  :root[data-rome-theme] .menu-panel { display: flex; flex-direction: column; padding: 6px 16px 14px; border-top: 1px solid var(--line); max-height: calc(100dvh - 76px); overflow-y: auto; overscroll-behavior: contain; }
+  :root[data-rome-theme] .menu-panel a { padding: 13px 4px; font-size: 16px; font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--line-2); }
+  :root[data-rome-theme] .menu-panel a:last-child { border-bottom: 0; }
+  :root[data-rome-theme] .menu-panel a[aria-current="page"] { color: var(--ink); font-weight: 600; }
+  :root[data-rome-theme] .rightnav { gap: 6px; min-width: 0; }
+}
+
+/* Light: the chosen tab, segment and theme choice carry the purple edge as well, so the chosen state reaches 3:1 against the page (a Light Pink pill alone is 1.1:1). */
+:root[data-rome-theme="light"] .tabs a[aria-current="true"], :root[data-rome-theme="light"] .seg button[aria-selected="true"], :root[data-rome-theme="light"] .seg-ctrl .seg.on, :root[data-rome-theme="light"] .theme-choice button[aria-pressed="true"] { box-shadow: inset 0 0 0 1px var(--sel-line); }
+
+/* ───────── the look: the field, glass cards, one loud primary (both palettes, from their tokens) ───────── */
+
+/* The field: three lights and a faint dot grid on one fixed layer (no blur, no layout change), and the lit line at the top. */
+:root[data-rome-theme] body::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; background-image: var(--field-dots), var(--field); background-size: 24px 24px, auto, auto, auto; }
+:root[data-rome-theme] .thread { height: 3px; background: var(--thread); }
+:root[data-rome-theme="dark"] .thread { box-shadow: 0 0 18px 1px rgba(181,108,255,.7); }
+
+/* Glass (dark) and frosted white (light) cards with a lit edge: the edge is a 1 px gradient ring on ::before, which takes no clicks. */
+:root[data-rome-theme] .card { position: relative; border-color: transparent; background: var(--card-bg); box-shadow: var(--card-shadow); backdrop-filter: var(--card-blur); -webkit-backdrop-filter: var(--card-blur); }
+:root[data-rome-theme] .card::before { content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none; background: var(--card-edge);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+/* a card that holds an open popover rises above the cards after it (each blurred card is its own stacking layer) */
+:root[data-rome-theme] .card:has(.pf-pop, .msel-list) { z-index: 5; }
+
+/* One loud primary: the gradient on the block button and the header Connect button only. Every other .btn (row Add, dialog buttons) is the flat colour above. */
+:root[data-rome-theme] .btn.block:not(.ghost), :root[data-rome-theme] .connect-btn { background: linear-gradient(var(--btn-angle), var(--btn-1) 0%, var(--btn-2) 55%, var(--btn-3) 100%); box-shadow: var(--btn-shadow); text-shadow: 0 1px 2px rgba(30,0,60,.4); }
+:root[data-rome-theme] .btn.block:not(.ghost):hover, :root[data-rome-theme] .connect-btn:hover { background: linear-gradient(var(--btn-angle), var(--btn-h1) 0%, var(--btn-h2) 55%, var(--btn-h3) 100%); }
+:root[data-rome-theme] .btn.block:not(.ghost):disabled:hover { background: linear-gradient(var(--btn-angle), var(--btn-1) 0%, var(--btn-2) 55%, var(--btn-3) 100%); }
+:root[data-rome-theme] .btn:disabled { box-shadow: none; }
+
+/* Phones: blur is the costly part, so it is lighter and the field's dot grid a little finer. */
+@media (max-width: 720px) {
+  :root[data-rome-theme] .card, :root[data-rome-theme] .top { backdrop-filter: var(--card-blur-sm); -webkit-backdrop-filter: var(--card-blur-sm); }
+  :root[data-rome-theme] body::before { background-size: 20px 20px, auto, auto, auto; }
+}
+/* No blur (reduced transparency, or a browser without backdrop-filter): solid cards and a solid header, so nothing reads through. */
+@media (prefers-reduced-transparency: reduce) {
+  :root[data-rome-theme] .card, :root[data-rome-theme] .top { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  :root[data-rome-theme] .card { background: var(--card-solid); }
+  :root[data-rome-theme] .top { background: var(--ground); }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root[data-rome-theme] .card { background: var(--card-solid); }
+  :root[data-rome-theme] .top { background: var(--ground); }
+}
+
+/* ───────── layout and copy ───────── */
+
+/* One gradient title per page: the page title (.sc-head h2) or the swap headline. What sits inside a title (icons, chips, the Swap button) keeps its own colour. */
+:root[data-rome-theme] .sc-head h2, :root[data-rome-theme] .lead-title { background: linear-gradient(95deg, var(--title-1), var(--title-2) 55%, var(--title-3)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+:root[data-rome-theme] .sc-head h2 > * { -webkit-text-fill-color: currentColor; }
+:root[data-rome-theme] .sc-head h2 .btn, :root[data-rome-theme] .sc-head h2 .badge { font-family: var(--sans); font-weight: 500; letter-spacing: 0; }
+
+/* Big headline numerals: Untitled Sans Bold for the stat tiles, the chart headline and the pool page's figures (a reserve is an amount and stays Plex Mono, as does
+   every table column). No glow. The size is the biggest that fits: --n is the figure's length (figStyle), the tile's own width the limit, so a long total shrinks. */
+:root[data-rome-theme] .card.stat, :root[data-rome-theme] .chartcard, :root[data-rome-theme] .kv .c { container-type: inline-size; }
+:root[data-rome-theme] .stat .v, :root[data-rome-theme] .chartcard .big, :root[data-rome-theme] .kv .c.fig .v {
+  font-family: var(--sans); font-weight: 700; letter-spacing: -.03em; line-height: 1.1; white-space: nowrap; text-shadow: none;
+  font-size: clamp(12px, calc(100cqi / (var(--n, 8) * .62)), 40px);
+}
+:root[data-rome-theme] .kv .c.apr .v { color: var(--apr); }
+
+/* The lead above the swap card: the headline, then ONE line of facts, figure first (hidden, room kept, until loaded). A qualifying note is a tooltip. */
+:root[data-rome-theme] .lead { text-align: center; margin: 0 0 14px; }
+:root[data-rome-theme] .lead-title { font-family: var(--serif); font-weight: 400; font-size: 44px; line-height: 1.08; letter-spacing: -.02em; margin: 0 auto; width: fit-content; max-width: 100%; }
+:root[data-rome-theme] .lead-facts { display: flex; justify-content: center; align-items: baseline; gap: 10px; margin-top: 6px; line-height: 1.35; white-space: nowrap; }
+:root[data-rome-theme] .lead-facts[data-ready="false"] { visibility: hidden; }
+:root[data-rome-theme] .lead-facts > .tip, :root[data-rome-theme] .lead-facts > span { display: inline-flex; align-items: baseline; gap: .3em; }
+:root[data-rome-theme] .lead-facts .tip { outline-offset: 3px; border-radius: 4px; }
+:root[data-rome-theme] .lead-facts b { font-family: var(--sans); font-weight: 700; font-size: 19px; letter-spacing: -.02em; color: var(--ink); }
+:root[data-rome-theme] .lead-facts .lf-w { font-size: 13px; color: var(--faint); font-weight: 500; }
+:root[data-rome-theme] .lead-facts i { font-style: normal; color: var(--faint); }
+
+/* APR: the figure in the APR ink (a blue, never red or pink) with a gauge under it on a straight scale (--fill, 100% or more fills it). */
+:root[data-rome-theme] .apr-cell > span { display: block; color: var(--apr); font-weight: 700; }
+:root[data-rome-theme] .apr-bar { display: block; height: 4px; width: 84px; margin: 6px 0 0 auto; border-radius: 99px;
+  background: linear-gradient(var(--apr-bar), var(--apr-bar)) 0 0 / calc(var(--fill, 0) * 100%) 100% no-repeat, var(--apr-track); }
+:root[data-rome-theme] .pool-meta .apr-chip { color: var(--apr); font-weight: 700; font-size: 14px; }
+
+@media (max-width: 720px) {
+  :root[data-rome-theme] .stat .v, :root[data-rome-theme] .chartcard .big, :root[data-rome-theme] .kv .c.fig .v { font-size: clamp(12px, calc(100cqi / (var(--n, 8) * .62)), 30px); }
+  :root[data-rome-theme] .win-stat .big { font-size: 20px; }
+  /* Pools: the four tiles fold into a compact two-line strip so the list starts on the first screen. */
+  :root[data-rome-theme] .pools-stats { gap: 8px; margin-bottom: 12px; }
+  :root[data-rome-theme] .pools-stats .stat { padding: 9px 12px 8px; }
+  :root[data-rome-theme] .pools-stats .stat .k { font-size: 10.5px; letter-spacing: .06em; }
+  :root[data-rome-theme] .pools-stats .stat .v { margin-top: 1px; }
+  /* Swap: a short lead, so the card's primary button is on the first screen. */
+  :root[data-rome-theme] .lead { margin: -20px 0 0; }
+  :root[data-rome-theme] .lead-title { font-size: 26px; }
+  /* the facts stay one line on a phone: small figure, small words */
+  :root[data-rome-theme] .lead-facts { gap: 7px; margin-top: 3px; }
+  :root[data-rome-theme] .lead-facts b { font-size: 14px; }
+  :root[data-rome-theme] .lead-facts .lf-w { font-size: 11px; }
+}

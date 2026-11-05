@@ -1,8 +1,8 @@
-// Theme preference store — lifted from the Rome web app's themeStore, adapted for the
-// Aave demo. The demo's public/styles.css switches palettes via the
-// `html[data-theme="light"]` attribute (dark is the `:root` default), so the
-// effective theme is applied as a data-theme attribute (see hooks/useTheme.ts),
-// not the `.dark` class the Rome web app uses.
+// Theme preference store — lifted from rome-ui's themeStore, adapted for the
+// Aave demo. The Rome app look (app/theme.css) reads `html[data-rome-theme]`,
+// so the effective theme is applied as attributes on <html> (see
+// hooks/useTheme.ts). DARK (Aurora) is the default for a first-time visitor;
+// the choice (light, system, dark) is remembered in localStorage.
 
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
@@ -18,11 +18,11 @@ interface ThemeState {
 export const useThemeStore = create<ThemeState>()(
   persist(
     (set) => ({
-      preference: "system",
+      preference: "dark",
       setPreference: (preference) => set({ preference }),
     }),
     {
-      // Distinct from the Rome web app's "the Rome web app-theme" so the two apps don't share
+      // Distinct from rome-ui's "rome-ui-theme" so the two apps don't share
       // a preference when served from sibling origins during local dev.
       name: "rome-aave-theme",
       storage: createJSONStorage(() => localStorage),

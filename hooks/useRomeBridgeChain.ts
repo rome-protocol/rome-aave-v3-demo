@@ -1,4 +1,4 @@
-// Lifted from the Rome web app. Single source of truth for "which Rome chain is the
+// Lifted from rome-ui. Single source of truth for "which Rome chain is the
 // app wired against right now". For this single-chain demo it always returns
 // Hadrian. Kept hook-shaped so lifted components (NetworkSetupHelp, etc.)
 // work without modification + future multi-chain support is a chainStore

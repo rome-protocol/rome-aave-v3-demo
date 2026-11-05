@@ -78,7 +78,7 @@ export interface DemoConfig {
   /** E-mode categories configured on this Pool. [] means no e-mode. */
   emodeCategories: EmodeCategoryConfig[];
   generatedAt: string;
-  aave_v3_ref: string;
+  rome_aave_v3_ref: string;
 }
 
 export interface EmodeCategoryConfig {
@@ -128,8 +128,9 @@ export interface AtRiskRow {
   hf: number;
   collatSym: string;
   collatUsd: number;
-  debtSym: string;
-  debtUsd: number;
+  debtSym: string; // largest debt asset
+  debtUsd: number; // total debt, all assets
+  debtAssetUsd: number; // debt in debtSym only
   bonusPct: number;
 }
 

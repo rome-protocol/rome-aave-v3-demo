@@ -12,6 +12,15 @@ export const sessionManager = {
     localStorage.setItem('wallet_last_activity', now);
   },
 
+  // A wallet that reconnects by itself after a refresh (wagmi, wallet-adapter
+  // autoConnect) never goes through setConnection(). Without a live session the
+  // idle check would disconnect it a few minutes later, so start one here. A
+  // session that is still valid is left alone, so the 24h cap keeps counting.
+  ensureSession: () => {
+    if (globalThis.window === undefined) return;
+    if (!sessionManager.isValid()) sessionManager.setConnection();
+  },
+
   updateActivity: () => {
     if (globalThis.window === undefined) return;
     localStorage.setItem('wallet_last_activity', Date.now().toString());

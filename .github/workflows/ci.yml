@@ -26,6 +26,9 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
+      - name: Theme readability test
+        run: node --test lib/themePalette.test.mjs
+
       - name: Test
         run: npm test --if-present
 

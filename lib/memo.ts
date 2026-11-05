@@ -18,6 +18,10 @@ interface Entry<T> {
    *  cold load that surfaces the upstream error — otherwise a persistent
    *  outage would serve arbitrarily-stale data indefinitely. */
   consecutiveRefreshFails: number;
+  /** Set by memoRefresh: when the value was last loaded on request. */
+  refreshedAt?: number;
+  /** When the loader that produced the held value started. A result from a loader that started earlier never replaces it: the newest wins. */
+  startedAt: number;
 }
 
 const STORE = new Map<string, Entry<unknown>>();
@@ -46,15 +50,19 @@ export function memoTtl<T>(
   if (hit && hit.lastValue !== undefined && staleTtlMs > 0 && hit.expiresAt + staleTtlMs > now) {
     if (!hit.refreshing) {
       hit.refreshing = true;
+      const startedAt = now;
       loader()
         .then((v) => {
           const e = STORE.get(key) as Entry<T> | undefined;
           if (!e) return;
+          e.refreshing = false;
+          e.consecutiveRefreshFails = 0;
+          // A post-action refresh that started after this one may have landed first: keep its newer value.
+          if (e.startedAt > startedAt) return;
           e.expiresAt = Date.now() + ttlMs;
           e.lastValue = v;
           e.promise = Promise.resolve(v);
-          e.refreshing = false;
-          e.consecutiveRefreshFails = 0;
+          e.startedAt = startedAt;
         })
         .catch((err) => {
           // Background refresh failed — keep serving stale value, clear the
@@ -86,7 +94,7 @@ export function memoTtl<T>(
     if (STORE.get(key)?.promise === promise) STORE.delete(key);
     throw err;
   });
-  const entry: Entry<T> = { expiresAt: now + ttlMs, promise, refreshing: false, consecutiveRefreshFails: 0 };
+  const entry: Entry<T> = { expiresAt: now + ttlMs, promise, refreshing: false, consecutiveRefreshFails: 0, startedAt: now };
   STORE.set(key, entry as Entry<unknown>);
   // Capture lastValue when this initial load resolves successfully so a
   // future stale hit can serve it without waiting.
@@ -97,7 +105,47 @@ export function memoTtl<T>(
   return promise;
 }
 
+const REFRESHES = new Map<string, Promise<unknown>>();
+/** A value loaded by memoRefresh this recently is reused, so repeated fresh requests cannot hammer the RPC. */
+const REFRESH_REUSE_MS = 1_500;
+
+/**
+ * Load a new value now (post-action reads) without evicting the cached one:
+ * normal callers keep getting the last value until the new one lands. One
+ * loader runs per key at a time; on failure the entry is left as it was.
+ */
+export function memoRefresh<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
+  const hit = STORE.get(key) as Entry<T> | undefined;
+  if (hit?.refreshedAt && hit.lastValue !== undefined && Date.now() - hit.refreshedAt < REFRESH_REUSE_MS) {
+    return Promise.resolve(hit.lastValue);
+  }
+  const running = REFRESHES.get(key) as Promise<T> | undefined;
+  if (running) return running;
+  const startedAt = Date.now();
+  const p = loader()
+    .then((v) => {
+      const now = Date.now();
+      // A background refresh that started after this one and finished first holds the newer value: keep it.
+      const held = STORE.get(key) as Entry<T> | undefined;
+      if (held && held.lastValue !== undefined && held.startedAt > startedAt) return v;
+      STORE.set(key, {
+        expiresAt: now + ttlMs,
+        promise: Promise.resolve(v),
+        lastValue: v,
+        refreshing: false,
+        consecutiveRefreshFails: 0,
+        refreshedAt: now,
+        startedAt,
+      } as Entry<unknown>);
+      return v;
+    })
+    .finally(() => REFRESHES.delete(key));
+  REFRESHES.set(key, p);
+  return p;
+}
+
 /** Test-only — clear the in-process cache. Not used in app code. */
 export function _memoTtlReset(): void {
   STORE.clear();
+  REFRESHES.clear();
 }
