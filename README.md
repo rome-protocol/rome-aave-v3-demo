@@ -23,7 +23,7 @@ Demo web app for canonical [Aave V3.6 on Rome](https://github.com/rome-protocol/
 
 ## Prices
 
-The three reserves (USDC, ETH, SOL) are priced from Rome's price book (the `*/USD-BOOK` feeds). `AaveOracle` reads each asset through one shim contract that wraps its book feed. If the book stalls, the shim answers with a fixed price that was set when the shim was deployed. `AaveOracle` itself has no fallback oracle. Prices move with the market and no price is hard-coded in this repo.
+The three reserves (USDC, ETH, SOL) are priced from Rome's price book (the `*/USD-BOOK` feeds). `AaveOracle` reads each asset through one shim contract that wraps its book feed. If the book stalls, the shim answers with a fixed price that was set when the shim was deployed. `AaveOracle` itself has no fallback oracle. Prices follow the market while the book updates, and no price is hard-coded in this repo.
 
 Read on 2026-11-05: USDC 0.9997, ETH 2,258, SOL 90.09 from `AaveOracle.getAssetPrice`.
 
@@ -84,7 +84,7 @@ decides and the other wallet's session is dropped (applied in
 `UniWalletProvider`, never in click handlers, because both wallets reconnect
 silently on load). Every read and write binds to `useActiveAddress()`:
 
-- **EVM wallet** → its own address; sends go through wagmi as before.
+- **EVM wallet** → its own address; sends go through wagmi.
 - **Solana wallet** → the synthetic EVM address `keccak256(pubkey)[12..32]`
   (`lib/lane/identity.ts`, the address rome-evm derives on chain from the Solana
   signer). Reads and sends both work. Sends are SIMD-0385 v1 transactions
@@ -105,9 +105,7 @@ several Solana transactions and goes through the relay (`lib/solana/relay.ts`):
 one wallet-signed gas deposit (USDC) for the synthetic when it is short, then
 the authorisation already given lets the proxy's payer drive the legs. Atomic
 actions go straight to Solana with the wallet as payer. A wallet-signed plan
-(`lib/solana/plan.ts`: one batch approval, legs fired together by the app) is
-built and tested but not used by the app: wallets' batch prompts mis-detect
-the network for v1 legs on devnet.
+(`lib/solana/plan.ts`) is built and tested, not used by the app today.
 
 Phantom and Solflare both work on Hadrian; the code never branches on a
 wallet's brand.
@@ -119,7 +117,8 @@ The display layer never says `wUSDC` / `wETH` / `cached` / `wrapper` / `SPL`. To
 ## Parameterization rule
 
 No chain value or Aave address is written into components or hooks (the only fixed addresses are the Rome helper precompile and Multicall3). The code reads:
-- **The vendored files**: chain config from `lib/hadrian-chain.json`; contract addresses (Pool / PoolConfigurator / Oracle / etc.), reserves and token display info from `lib/aave-hadrian.json` (loaded by `lib/registry-config.ts`)
+- **The vendored files**: chain config from `lib/hadrian-chain.json`; contract addresses (Pool / PoolConfigurator / Oracle / etc.), reserves and the token list from `lib/aave-hadrian.json` (loaded by `lib/registry-config.ts`)
+- **Names and logos** on screen come from `/api/token`, in this order: the Rome registry, Jupiter's verified list, the token's on-chain metadata. The registry source is optional and needs credentials (`REGISTRY_GITHUB_APP_ID`, `REGISTRY_GITHUB_APP_PRIVATE_KEY` or `REGISTRY_AUTH_TOKEN`); without them the app uses Jupiter's list and on-chain metadata.
 - **RPC at request time**: reserve data (APYs / utilization / total supply / borrow) via `UiPoolDataProviderV3.getReservesData`; user data via `getUserReservesData(user)`; per-asset price via `AaveOracle.getAssetPrice`
 
 ## License

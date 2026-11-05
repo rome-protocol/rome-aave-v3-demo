@@ -60,7 +60,7 @@ E-mode lets you borrow more against correlated assets. This market has no e-mode
 
 ## Prices
 
-Prices are live. USDC, ETH and SOL are priced from Rome's price book, and the numbers on screen move with the market. Each asset goes through one small contract that reads its book feed. If the book stops updating, that contract answers with the price that was fixed when the switch was made, so the market keeps working.
+Prices are live. USDC, ETH and SOL are priced from Rome's price book, and the numbers on screen move with the market. Each asset goes through one small contract that reads its book feed. If the book stops updating, that contract answers with a fixed price that was set when the shim was deployed, so the market keeps working.
 
 ---
 
@@ -107,6 +107,6 @@ Multi-asset flash loans are not offered yet.
 
 ## Running your own copy
 
-The demo is a standalone Next.js app (`npm install`, `npm run build`, `npm start`; see the README for local development).
+The demo is a standalone Next.js app (`npm install --legacy-peer-deps`, `npm run build`, `npm start`; see the README for local development).
 
 App config (chain id, RPC, contract addresses) comes from the vendored registry files in `lib/` (`hadrian-chain.json`, `aave-hadrian.json`). Do not hardcode addresses elsewhere. Two environment variables point the same-origin proxies at other upstreams: `ROME_RPC_UPSTREAM` (the Rome RPC) and `SOLANA_RPC_UPSTREAM` (the Solana RPC; the default is the public Solana devnet RPC).

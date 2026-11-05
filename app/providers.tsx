@@ -5,8 +5,8 @@
 //   QueryClientProvider
 //    └── Solana ConnectionProvider (devnet endpoint — Hadrian's substrate)
 //        └── WagmiProvider
-//            └── Solana WalletProvider (wallet-adapter — adapters dormant
-//                until a Solana-via-ED25519 flow lands)
+//            └── Solana WalletProvider (wallet-adapter: Phantom, Solflare,
+//                Coinbase, Trust)
 //                └── Solana WalletModalProvider (context only — UI never
 //                    rendered; we ship our own WalletModal)
 //                    └── UniWalletProvider (our wallet selector + EVM/SOL
@@ -15,8 +15,7 @@
 //                            └── {children}
 //
 // RainbowKit is intentionally NOT in this tree. The Aave demo uses
-// the Rome web app's UniWallet stack — EVM today, Solana plumbing ready for
-// the ED25519 path that's already proven on Compound.
+// the Rome web app's UniWallet stack: EVM wallets and Solana wallets, side by side.
 
 import { useMemo, useState, type ReactNode } from "react";
 import { WagmiProvider } from "wagmi";

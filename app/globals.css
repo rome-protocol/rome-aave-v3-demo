@@ -124,7 +124,7 @@ html, body { margin: 0; padding: 0; }
   .compact-table th, .compact-table td { padding-left: 8px; padding-right: 8px; }
 }
 
-/* ─── the header, the wallet pill and menu, the chooser and the one dialog (the DEX's globals.css and ui.css; step 3 of the guide) ─── */
+/* ─── the header, the wallet pill and menu, the chooser and the one dialog ─── */
 .top { background:var(--header-bg); backdrop-filter:blur(20px); -webkit-backdrop-filter:blur(20px); border-bottom:1px solid var(--line); }
 .nav { display:flex; align-items:center; gap:20px; padding:14px 0; }
 .mark { display:flex; align-items:center; gap:12px; flex-shrink:0; text-decoration:none; }

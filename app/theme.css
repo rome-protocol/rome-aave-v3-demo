@@ -293,7 +293,7 @@
 .menu-panel .theme-row { border-top: 0; margin-top: 0; padding: 14px 4px 4px; }
 .theme-pop { min-width: 260px; }
 .theme-pop .theme-row { border-top: 0; margin-top: 0; }
-/* The Theme button is one more control in the header, which needs 48 px more: while the switch is on the page links move into the menu 70 px
+/* The Theme button is one more control in the header, which needs 48 px more: the page links move into the menu 70 px
    earlier (the same menu rules as globals.css at 1160 px), and the menu carries the choice. */
 @media (max-width: 1230px) { .theme-btn-root { display: none; } }
 @media (min-width: 1161px) and (max-width: 1230px) {
