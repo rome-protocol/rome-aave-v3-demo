@@ -15,5 +15,6 @@
     "cluster": "devnet",
     "explorerUrl": "https://explorer.solana.com",
     "rpc": "https://api.devnet.solana.com"
-  }
+  },
+  "multicall3": "0xb7180d3c46632b582b99d9af3daae394fab9ae4c"
 }

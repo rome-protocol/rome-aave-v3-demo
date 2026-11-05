@@ -1,5 +1,5 @@
 // Minimal ABIs for the contracts the demo reads. Keeps the bundle small.
-// Full ABIs (when needed for writes) get vendored from Aave v3 artifacts.
+// Full ABIs (when needed for writes) get vendored from rome-aave-v3 artifacts.
 
 // AggregatedReserveData struct mirrors the v3.6 IUiPoolDataProviderV3
 // interface exactly. Earlier v3 versions had e-mode-related fields inline;
@@ -193,8 +193,8 @@ export const PoolAbi = [
   },
   // Pool.flashLoanSimple(receiverAddress, asset, amount, params, referralCode).
   // The receiver must implement IFlashLoanSimpleReceiver.executeOperation
-  // and approve(pool, amount + premium) inside that callback. The 0.09%
-  // premium is enforced by the Pool — we surface it in the composer UI.
+  // and approve(pool, amount + premium) inside that callback. The premium
+  // is the Pool's FLASHLOAN_PREMIUM_TOTAL, read live and shown in the composer.
   {
     type: "function",
     name: "flashLoanSimple",
@@ -211,7 +211,7 @@ export const PoolAbi = [
   // Pool.flashLoan(receiverAddress, assets[], amounts[], modes[], onBehalfOf,
   // params, referralCode). Multi-asset variant. modes=[0,...] = flash-only
   // (must repay in same tx). On Rome the receiver MUST be pre-approved (see
-  // Aave v3's PreApprovedFlashReceiverBase) — in-callback approve adds
+  // rome-aave-v3's PreApprovedFlashReceiverBase) — in-callback approve adds
   // the SPL approve_checked CPI accounts to the per-sig set and overflows
   // the per-tx account_locks cap.
   {
@@ -232,6 +232,16 @@ export const PoolAbi = [
   // E-mode reads + write. Categories are configured by an admin via
   // PoolConfigurator.setEModeCategory; users opt in by calling
   // Pool.setUserEMode(categoryId). id=0 means "no e-mode."
+  {
+    type: "function",
+    name: "setUserUseReserveAsCollateral",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "asset", type: "address" },
+      { name: "useAsCollateral", type: "bool" },
+    ],
+    outputs: [],
+  },
   {
     type: "function",
     name: "setUserEMode",

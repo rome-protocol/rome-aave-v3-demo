@@ -3,7 +3,7 @@
 // Phase-machine hook for Pool.flashLoan (multi-asset entrypoint) on Rome.
 //
 // Rome-specific pattern: the receiver MUST be pre-approved (see
-// Aave v3's PreApprovedFlashReceiverBase) — the canonical Aave V3
+// rome-aave-v3's PreApprovedFlashReceiverBase) — the canonical Aave V3
 // in-callback approve overflows the per-sig account_locks cap when 2+
 // cached SPL wrappers are involved. This hook assumes the receiver was
 // pre-init'd by a deploy task; it only handles per-tx funding + the
@@ -13,7 +13,7 @@
 //   - Pass `receiver` = a pre-init'd PreApprovedFlashReceiverBase address.
 //     For the public demo, lib/aave-hadrian.json#flashLoanReceivers.demoMulti.
 //   - Pass `assets` + `amounts` matched arrays. Premium per asset is
-//     amounts[i] * 9 / 10000 (Aave V3 default 0.09%), rounded up. We send
+//     amounts[i] * Pool.FLASHLOAN_PREMIUM_TOTAL / 10000, rounded up. We send
 //     amount[i] + 1 wei safety margin per asset to fund.
 //
 // Phase flow:
@@ -22,16 +22,18 @@
 
 import { useCallback, useMemo, useState } from "react";
 import {
-  useAccount,
   usePublicClient,
-  useWriteContract,
 } from "wagmi";
+import { useActiveAddress } from "@/hooks/useActiveLane";
+import { useSendAaveCall } from "@/hooks/useSendAaveCall";
 import { isAddress, parseUnits } from "viem";
 import { useQueryClient } from "@tanstack/react-query";
 import { PoolAbi, Erc20Abi } from "@/lib/abi";
 import { hadrian } from "@/lib/wagmi";
 import { decodeAaveError } from "@/lib/decode-aave-error";
-import { waitForReceiptWithTimeout } from "@/lib/wait-for-receipt";
+import { confirmTx } from "@/lib/wait-for-receipt";
+import { markFresh } from "@/lib/fresh";
+import { useFlashPremiumBps } from "@/hooks/useFlashPremium";
 
 export type Phase =
   | "editing"
@@ -45,8 +47,6 @@ interface UseAaveMultiFlashLoanArgs {
   receiver: `0x${string}` | undefined;
   /** Per-asset rows: contract addr + decimals + human-amount string. */
   assets: Array<{ address: `0x${string}`; decimals: number; amount: string }>;
-  /** Aave V3 default 0.09%; the Pool enforces it. */
-  flashPremiumBps?: number;
 }
 
 interface UseAaveMultiFlashLoanReturn {
@@ -57,6 +57,8 @@ interface UseAaveMultiFlashLoanReturn {
   fundingTxHashes: string[];
   executeHash?: string;
   amountRawTotal: bigint;
+  /** Premium in bps, read from the pool; undefined until read. */
+  premiumBps?: number;
   /** True only when every input row is valid (amount > 0, asset != 0) and the
    *  receiver/pool addresses are set. */
   isReady: boolean;
@@ -68,12 +70,12 @@ export function useAaveMultiFlashLoan({
   pool,
   receiver,
   assets,
-  flashPremiumBps = 9,
 }: UseAaveMultiFlashLoanArgs): UseAaveMultiFlashLoanReturn {
-  const { address: userAddr } = useAccount();
+  const { address: userAddr } = useActiveAddress();
+  const { sendCall, ensureWrapperGrant, wasRelayed } = useSendAaveCall();
   const publicClient = usePublicClient({ chainId: hadrian.id });
-  const { writeContractAsync } = useWriteContract();
   const queryClient = useQueryClient();
+  const flashPremiumBps = useFlashPremiumBps(pool);
 
   const [phase, setPhase] = useState<Phase>("editing");
   const [error, setError] = useState<string | undefined>(undefined);
@@ -89,7 +91,7 @@ export function useAaveMultiFlashLoan({
         const amt = parseUnits(a.amount || "0", a.decimals);
         amts.push(amt);
         // Match the SmokeFlashLoanReceiver convention: (amount * bps) / 10_000 + 1 safety wei
-        prems.push((amt * BigInt(flashPremiumBps)) / 10000n + 1n);
+        prems.push((amt * BigInt(flashPremiumBps ?? 0)) / 10000n + 1n);
       } catch {
         amts.push(0n);
         prems.push(0n);
@@ -103,6 +105,7 @@ export function useAaveMultiFlashLoan({
   }, [assets, flashPremiumBps]);
 
   const isReady = useMemo(() => {
+    if (flashPremiumBps === undefined) return false;
     if (!pool || !receiver || !isAddress(pool) || !isAddress(receiver)) return false;
     if (assets.length < 1) return false;
     for (let i = 0; i < assets.length; i++) {
@@ -110,7 +113,7 @@ export function useAaveMultiFlashLoan({
       if (amountsRaw[i] === 0n) return false;
     }
     return true;
-  }, [pool, receiver, assets, amountsRaw]);
+  }, [pool, receiver, assets, amountsRaw, flashPremiumBps]);
 
   const reset = useCallback(() => {
     setPhase("editing");
@@ -146,14 +149,10 @@ export function useAaveMultiFlashLoan({
           continue;
         }
         const needed = premium - balance;
-        const xHash = await writeContractAsync({
-          address: asset,
-          abi: Erc20Abi,
-          functionName: "transfer",
-          args: [receiver, needed],
-          chainId: hadrian.id,
-        });
-        await waitForReceiptWithTimeout(publicClient, xHash);
+        const gHash = await ensureWrapperGrant(asset);
+        if (gHash) await confirmTx(publicClient, gHash, wasRelayed(gHash), { linkInMessage: true });
+        const xHash = await sendCall({ address: asset, abi: Erc20Abi, functionName: "transfer", args: [receiver, needed] });
+        await confirmTx(publicClient, xHash, wasRelayed(xHash));
         fundHashes.push(xHash);
         setFundingTxHashes([...fundHashes]);
       }
@@ -171,33 +170,21 @@ export function useAaveMultiFlashLoan({
         0,
       ] as const;
 
-      const est = await publicClient.estimateContractGas({
-        account: userAddr,
-        address: pool,
-        abi: PoolAbi,
-        functionName: "flashLoan",
-        args,
-      });
-      const gas = (est * 13_000n) / 10_000n;
-      const xHash = await writeContractAsync({
-        address: pool,
-        abi: PoolAbi,
-        functionName: "flashLoan",
-        args,
-        chainId: hadrian.id,
-        gas,
-      });
+      const xHash = await sendCall({ address: pool, abi: PoolAbi, functionName: "flashLoan", args });
       setExecuteHash(xHash);
-      await publicClient.waitForTransactionReceipt({ hash: xHash });
+      await confirmTx(publicClient, xHash, wasRelayed(xHash));
 
       setPhase("success");
+      markFresh();
       void queryClient.invalidateQueries({ queryKey: ["history"] });
       void queryClient.invalidateQueries({ queryKey: ["aave-config"] });
     } catch (e: unknown) {
       setError(decodeAaveError(e));
       setPhase("error");
     }
-  }, [isReady, pool, receiver, publicClient, userAddr, assets, amountsRaw, premiumsRaw, writeContractAsync, queryClient]);
+  }, [isReady, pool, receiver, publicClient, userAddr, assets, amountsRaw, premiumsRaw, sendCall,
+    ensureWrapperGrant,
+    wasRelayed, queryClient]);
 
   return {
     phase,
@@ -207,6 +194,7 @@ export function useAaveMultiFlashLoan({
     fundingTxHashes,
     executeHash,
     amountRawTotal,
+    premiumBps: flashPremiumBps,
     isReady,
     submit,
     reset,

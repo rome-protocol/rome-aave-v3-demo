@@ -1,0 +1,85 @@
+/* The token mark and the token picker (components/TokenIcon.tsx, components/TokenPicker.tsx), taken from the Rome DEX (globals.css, ui.css, picker.css).
+   Loaded after theme.css; the palette colours of the mark and the themed rows come from theme.css. */
+
+/* The one token mark: the token's logo, or a letter on one of the palette colours (theme.css .tmark.c0 ... c5). */
+.tmark { width:30px; height:30px; border-radius:50%; display:inline-grid; place-items:center; overflow:hidden; font-family:var(--sans); font-weight:700; color:#fff; flex-shrink:0; line-height:1; user-select:none; }
+.tmark[data-letter]::before { content:attr(data-letter); }
+.tmark img { display:block; width:100%; height:100%; object-fit:cover; }
+.tmark img[hidden] { display:none; }
+/* A logo is never cropped (TokenIcon sets data-fit from the loaded image's own shape): a square token icon fills the circle (above); any other
+   shape is drawn whole, contained and centred with even padding, on the mark's own colour. */
+.tmark[data-fit="whole"] img { width:68%; height:68%; object-fit:contain; }
+
+/* Token picker window: search, then hairline rows with logo, symbol, name and short address. */
+.tsearch { display:flex; align-items:center; gap:10px; padding:11px 14px; border-radius:12px; border:1px solid var(--line); background:var(--panel-2); color:var(--faint); transition:border-color .16s var(--ease); }
+.tsearch:focus-within { border-color:var(--bridge); color:var(--muted); }
+.tsearch input { flex:1; min-width:0; border:0; outline:0; background:transparent; color:var(--ink); font:inherit; font-size:15.5px; }
+.tsearch input::placeholder { color:var(--faint); }
+.tlist { margin-top:10px; max-height:min(56dvh,420px); overflow-y:auto; display:flex; flex-direction:column; }
+.trow { display:flex; align-items:center; gap:12px; width:100%; padding:11px 8px; border:0; border-top:1px solid var(--line-2); background:transparent; color:var(--ink); text-align:left; font:inherit; border-radius:0; }
+.trow:first-child { border-top:0; }
+.trow:hover, .trow:focus-visible { background:var(--line-2); outline:none; }
+.trow[aria-pressed="true"] { background:rgba(180,92,230,.10); }
+.trow-id { display:flex; flex-direction:column; min-width:0; flex:1; line-height:1.3; }
+.trow-sym { font-weight:600; font-size:15.5px; }
+.trow-name { color:var(--muted); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.trow-end { display:flex; flex-direction:column; align-items:flex-end; gap:2px; flex:0 0 auto; }
+.trow-addr { color:var(--faint); font-size:12px; }
+.trow-bal { font-size:13.5px; color:var(--ink); }
+.trow-tick { color:var(--bridge); }
+.tnote { padding:14px 8px; color:var(--muted); font-size:14.5px; }
+.tnote-bad { display:flex; gap:10px; align-items:flex-start; margin-top:6px; padding:12px 14px; border-radius:12px; background:var(--down-dim); border:1px solid rgba(240,97,106,.35); color:var(--down); }
+.tnote-bad svg { margin-top:2px; }
+
+/* The asset button that opens the picker. */
+.tbtn { display:inline-flex; align-items:center; gap:9px; padding:6px 12px 6px 6px; border-radius:999px; border:1px solid var(--line); background:var(--panel-3); color:var(--ink); font:inherit; font-weight:600; font-size:15.5px; white-space:nowrap; flex-shrink:0; transition:border-color .16s var(--ease); }
+.tbtn:hover, .tbtn:focus-visible { border-color:var(--bridge); outline:none; }
+.tbtn:disabled { opacity:.6; cursor:default; }
+.tbtn-empty { padding:9px 12px 9px 16px; color:var(--muted); font-weight:500; }
+.tbtn-chev { color:var(--muted); }
+.tbtn-block { display:flex; width:100%; border-radius:14px; padding:10px 14px 10px 10px; background:var(--panel-2); }
+.tbtn-block .tbtn-sym { flex:1; text-align:left; }
+.tbtn-block.tbtn-empty { padding:14px 16px; }
+
+
+/* A row: the pick button, and beside it the favorite star. The wrapper carries the hover and chosen backgrounds so they cover both. */
+.trow-wrap { display:flex; align-items:stretch; border-top:1px solid var(--line-2); }
+.trow-wrap:first-child { border-top:0; }
+.trow-wrap .trow { flex:1 1 auto; width:auto; min-width:0; }
+:root .trow-wrap > .trow, :root .trow-wrap > .trow:hover, :root .trow-wrap > .trow:focus-visible, :root .trow-wrap > .trow[aria-pressed="true"] { background:transparent; }
+.trow-wrap[data-selected="true"] { background:rgba(180,92,230,.10); }
+.trow-wrap:hover, .trow-wrap:focus-within { background:var(--line-2); }
+
+.tstar { flex:0 0 auto; width:44px; display:inline-flex; align-items:center; justify-content:center; padding:0; border:0; background:transparent; color:var(--muted); border-radius:10px; }
+.tstar:hover { color:var(--ink); }
+.tstar[aria-pressed="true"] { color:var(--warn); }
+.tstar:focus-visible, .tsearch-x:focus-visible, .tchip:focus-visible, .tquick-clear:focus-visible { outline:2px solid var(--ring, var(--bridge)); outline-offset:-2px; }
+
+/* The clear button inside the search box. */
+.tsearch-x { flex:0 0 auto; width:26px; height:26px; margin-right:-6px; display:inline-flex; align-items:center; justify-content:center; padding:0; border:0; border-radius:8px; background:transparent; color:var(--muted); }
+.tsearch-x:hover { color:var(--ink); background:var(--line-2); }
+
+/* Favorites and Recent above the full list. Chips wrap; more than about two lines of them scroll inside their own box. */
+.tquick { margin-top:12px; }
+.tquick-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:6px; }
+.tquick-label { font-size:12px; letter-spacing:var(--ls-eyebrow, .08em); text-transform:uppercase; color:var(--faint); font-weight:600; }
+.tquick-clear { padding:4px 8px; margin-right:-8px; min-height:28px; border:0; border-radius:6px; background:transparent; color:var(--muted); font:inherit; font-size:13px; }
+.tquick-clear:hover { color:var(--ink); }
+.tchips { display:flex; flex-wrap:wrap; gap:8px; max-height:84px; overflow-y:auto; padding:1px; }
+.tchip { display:inline-flex; align-items:center; gap:7px; padding:5px 12px 5px 6px; border-radius:999px; border:1px solid var(--line); background:var(--panel-2); color:var(--ink); font:inherit; font-size:14px; font-weight:600; white-space:nowrap; max-width:100%; }
+.tchip:hover { border-color:var(--bridge); }
+
+/* The Rome looks. */
+:root[data-rome-theme] .trow-wrap { border-color:var(--line-2); }
+:root[data-rome-theme] .trow-wrap[data-selected="true"] { background:var(--sel-soft); }
+:root[data-rome-theme] .trow-wrap:hover, :root[data-rome-theme] .trow-wrap:focus-within { background:var(--hover); }
+:root[data-rome-theme] .tchip { background:var(--chip-bg); border-color:var(--btn2-edge); }
+:root[data-rome-theme] .tchip:hover { border-color:var(--ring); }
+:root[data-rome-theme] .tstar:focus-visible, :root[data-rome-theme] .tsearch-x:focus-visible, :root[data-rome-theme] .tchip:focus-visible, :root[data-rome-theme] .tquick-clear:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
+:root[data-rome-theme] .tstar, :root[data-rome-theme] .tsearch-x, :root[data-rome-theme] .tquick-clear { color:var(--muted); }
+:root[data-rome-theme] .tstar:hover, :root[data-rome-theme] .tsearch-x:hover, :root[data-rome-theme] .tquick-clear:hover { color:var(--ink); }
+:root[data-rome-theme] .tstar[aria-pressed="true"] { color:var(--warn); }
+:root[data-rome-theme] .tsearch-x:hover { background:var(--hover); }
+
+/* A phone: the row keeps its name (no tick, a narrower star). */
+@media (max-width:480px) { .trow-tick { display:none; } .trow { gap:10px; padding-left:4px; padding-right:4px; } .tstar { width:36px; } }

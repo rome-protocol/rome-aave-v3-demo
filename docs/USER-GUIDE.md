@@ -1,28 +1,27 @@
-# Rome Aave V3 — User Guide
+# Rome Aave V3: User Guide
 
-How to use the Aave V3 demo at **`aave.testnet.romeprotocol.xyz`** (Hadrian,
-chain `200010`). This is canonical Aave V3 running on Rome — lend, borrow,
-repay, withdraw, liquidate, and flash-loan, settled Solana-fast.
+How to use the Aave V3 demo at **`aave.testnet.romeprotocol.xyz`**. It is canonical Aave V3.6 running on Rome. You can supply, borrow, repay, withdraw, liquidate and flash-loan. The app shows the network as **Solana · via Rome**, with a **Testnet** tag. Nothing here uses real money.
 
-For how the protocol works + how to deploy the contracts, see
-[`Aave v3/docs/AAVE-V3-ON-ROME.md`](https://github.com/rome-protocol/rome-aave-v3/blob/main/docs/AAVE-V3-ON-ROME.md).
+For how the protocol works and how to deploy the contracts, see
+[`rome-aave-v3/docs/AAVE-V3-ON-ROME.md`](https://github.com/rome-protocol/rome-aave-v3/blob/main/docs/AAVE-V3-ON-ROME.md).
 
 ---
 
 ## Getting started
 
-1. **Add the network.** When you connect, your wallet is prompted to add
-   Rome Hadrian automatically. Manual fallback (the connect modal lists these):
-   chain id `200010` / RPC `https://hadrian.testnet.romeprotocol.xyz/`.
-2. **Connect a wallet.** Click **Connect wallet** → pick your EVM wallet
-   (MetaMask, Rabby, any injected wallet). The header pill shows your address
-   once connected.
-3. **Get test funds.** Go to **Faucet** and claim — you get **10 native gas +
-   100 each of HEAT / SALT / MILK / OIL** (mock collateral tokens), **once per
-   address**. (wUSDC / wETH / wSOL come from the pool's seeded liquidity, not
-   the faucet.)
-4. **Theme.** The sun/moon toggle in the header switches light/dark; your
-   choice persists.
+1. **Connect a wallet.** Click **Connect wallet**. The list has two groups.
+   - **EVM wallets:** MetaMask, Rabby, or any other injected wallet. The wallet asks to add the network the first time you connect.
+   - **Solana wallets:** Phantom and Solflare both work. Switch the wallet to its Solana test network first, or balances will not show. Phantom: Settings, Developer Settings, Testnet Mode, Solana Devnet. Solflare: Settings, Network, Devnet. The connect window repeats these steps.
+
+   The app uses one wallet at a time. If you connect a wallet of the other kind, the first one is disconnected.
+2. **Get test funds.** There is no faucet. Move assets in with the [Rome Bridge](https://bridge-api.devnet.romeprotocol.xyz). You can supply USDC, ETH and SOL. USDC also pays the network fee.
+3. **Theme.** The sun, monitor and moon choice in the header sets Light, System or Dark. The default is dark. The app remembers your choice.
+
+### Solana wallets
+
+With a Solana wallet you keep your tokens in your own wallet. When you supply, repay or liquidate, the app moves what is needed into your Rome account first, in one wallet-signed transaction. When you withdraw, borrow or liquidate, the result goes back to your wallet. SOL is wrapped for the move and unwrapped on the way back, so you hold plain SOL. Your wallet asks you to sign each step.
+
+Some actions need several Solana transactions, such as a borrow or a liquidation. The app handles the extra steps. It may ask for one small USDC deposit to cover the network fee if your Rome account is short.
 
 ---
 
@@ -30,96 +29,65 @@ For how the protocol works + how to deploy the contracts, see
 
 | Page | What you do there |
 |---|---|
-| **Markets** | See every reserve — supply/borrow APY, total supply/borrow, available liquidity. The home view. |
-| **Dashboard** | Your positions: net worth, supplied/borrowed, **health factor**, and the E-mode switcher. Where you act on your own portfolio. |
-| **Liquidate** | The at-risk feed — borrowers with HF < 1.05. Liquidate underwater positions for a collateral bonus. |
-| **Flash Loan** | Borrow 1-3 assets with zero collateral, atomically. |
-| **History** | Your past actions, with the real Solana settlement signatures. |
-| **Faucet** | One-time claim of test gas + mock tokens. |
+| **Markets** | The home page. The market overview (size, available, borrowed) is split into EVM and Solana wallets. Below it, every asset with supplied, borrowed, supply and borrow APY, utilization and price. Click an asset for its own page. |
+| **Dashboard** | Your positions: net worth, net APY, **health factor**, what you supplied and borrowed. Where you act on your own portfolio. |
+| **Liquidate** | Borrowers close to liquidation. Liquidate the ones below health factor 1.00. |
+| **Flash Loan** | Borrow with no collateral and repay in the same transaction. |
+| **History** | Your past actions. Each row opens the Solana transactions behind it. |
 
 ---
 
-## Core actions (Supply / Borrow / Withdraw / Repay)
+## Core actions
 
-From **Markets** or **Dashboard**, click a reserve to open the action modal.
+Open an asset from **Markets**, or use the buttons on your **Dashboard**.
 
-- **Supply** — deposit an asset to earn yield; it becomes collateral you can
-  borrow against. (Approves the token first if needed, then supplies.)
-- **Borrow** — borrow an asset against your supplied collateral. You can only
-  borrow up to your borrowing power, and only what the pool has liquid.
-- **Withdraw** — pull supplied assets back out. Blocked if it would drop your
-  health factor below 1, or if the pool doesn't have enough liquid (some may
-  be borrowed out).
-- **Repay** — pay back borrowed debt (frees collateral, raises HF).
+- **Supply:** deposit an asset to earn yield. It counts as collateral. On the Dashboard you can switch collateral off for an asset.
+- **Borrow:** borrow against your collateral, up to your borrowing power and what the pool has available.
+- **Withdraw:** take supplied assets back. Blocked if it would put your health factor below 1, or if the pool has too little available.
+- **Repay:** pay back debt. This frees collateral and raises your health factor.
 
-Each modal shows a **projected health factor** ("2.34 → 1.62") before you
-sign, and **guards every action before submitting** — if something would
-revert (insufficient balance, exhausted liquidity, HF below 1, supply cap),
-you get a plain-English message instead of a cryptic wallet error.
+Each window shows the **health factor before and after** (for example "2.34 to 1.62"). If an action would fail, such as too little balance, too little liquidity, a health factor below 1 or a supply cap, the app says so in plain words before you sign.
 
-### Health factor (HF)
+### Health factor
 
-HF = (collateral × liquidation thresholds) ÷ debt. **Below 1 = liquidatable.**
-The header shows a red banner when your HF drops under 1. Keep it comfortably
-above 1 by repaying debt or supplying more collateral.
+Health factor = collateral (weighted by liquidation thresholds) divided by debt. **Below 1 means the position can be liquidated.** A red banner appears under the header when yours drops below 1. Repay debt or supply more collateral to raise it.
 
-### E-mode (Efficiency Mode)
+### E-mode
 
-On the **Dashboard**, E-mode lets you borrow more against *correlated*
-collateral. Hadrian has two categories: **Stablecoin** (USDC-only, up to ~93%
-LTV) and **Crypto** (ETH/SOL). The trade-off: while a category is on, you can
-only borrow assets within it. Reversible when you have no out-of-category debt.
-
----
-
-## Liquidations
-
-Liquidation is how the protocol stays solvent: a **third party** repays an
-underwater borrower's debt and receives their collateral at a discount (the
-**liquidation bonus**, e.g. +10%).
-
-- The **Liquidate** page lists borrowers with HF < 1.05 (a 12s-tick live feed).
-- The **Liquidate** button is enabled only for positions you *can* liquidate:
-  HF must be below 1, and it can't be your own position (your own row is tagged
-  "You" and disabled — Aave forbids self-liquidation).
-- When HF is below 0.95, the modal defaults to a **full-debt** repayment (Aave
-  allows a 100% close there); partial liquidations of tiny positions are
-  rejected by the protocol's anti-dust rule.
-
-There is **no automatic liquidation bot** on this demo — it's a hands-on flow.
-(In production, keeper bots race to liquidate within seconds.) To see one
-execute end-to-end, an operator can stand up a liquidatable position — see the
-contracts repo's ops guide, §7.
-
----
-
-## Flash loans
-
-A flash loan lets you **borrow with zero collateral and repay + a 0.09%
-premium inside a single transaction** — if repayment fails, the whole thing
-reverts as if it never happened. The page has two paths:
-
-- **Multi-asset Composer (primary, top-left).** Pick 1-3 assets, set amounts,
-  Execute. No setup needed — it uses a pre-deployed, pre-approved demo receiver
-  contract. This is the one to try. The right panel explains how it works.
-- **Build your own (collapsed "advanced" section).** The canonical single-asset
-  `flashLoanSimple` — for developers who supply their own receiver contract
-  address + calldata. Skip this unless you've deployed a receiver.
-
-Why a pre-approved receiver: a flash loan only works if a *contract* receives
-the funds, does the work, and repays — all atomically. On Rome, the demo
-pre-approves that contract so a multi-asset loan stays under Solana's per-tx
-account cap. (Details: contracts repo ops guide §6.)
+E-mode lets you borrow more against correlated assets. This market has no e-mode categories today, so the Dashboard card says "No e-mode categories."
 
 ---
 
 ## Prices
 
-The real assets (USDC, ETH, SOL) are priced from **live Pyth** read off
-Solana through Rome's Oracle Gateway V2 — so the prices you see move with the
-market (e.g. ETH ~$2,070, not a fixed demo value). The invented demo tokens
-(HEAT/SALT/MILK/OIL) use fixed mock prices. If a price feed ever goes stale,
-the oracle falls back to a last-known value rather than breaking the market.
+Prices are live. USDC, ETH and SOL are priced from Rome's price book, and the numbers on screen move with the market. Each asset goes through one small contract that reads its book feed. If the book stops updating, that contract answers with the price that was fixed when the switch was made, so the market keeps working.
+
+---
+
+## Liquidations
+
+A liquidator repays part of an underwater borrower's debt and receives that borrower's collateral at a discount. The discount is the **liquidation bonus**, 5% on all three assets.
+
+- The **Liquidate** page lists borrowers whose health factor is under 1.05. The list refreshes about every 15 seconds. The default filter is "< 1.05". You can also pick "< 1.00", "< 1.10" or "All".
+- You can liquidate a position only **below health factor 1.00**. Rows between 1.00 and 1.05 are there to watch. Their Liquidate button is off, with "Close to liquidation" under it.
+- You cannot liquidate your own position. Your row is tagged "You".
+- The window pre-fills the amount by the Aave v3.6 close rules:
+  - You may repay the **whole debt in that asset** when the borrower's debt or collateral in that asset is under $2,000, or when health factor is 0.95 or lower.
+  - Otherwise you may repay at most **half of the borrower's total debt**.
+  - A partial repay must leave at least $1,000 of debt and $1,000 of collateral. The pre-filled amount stays inside that limit.
+- "You receive" shows the collateral for your repayment plus the bonus. It never shows more than the borrower holds.
+
+There is no liquidation bot on this demo. Liquidation is hands-on.
+
+---
+
+## Flash loans
+
+A flash loan lets you borrow with no collateral and repay inside the same transaction. If repayment fails, the whole transaction reverts. The premium comes from the pool and the page shows it. It is **0 today**, so the page says "no fee".
+
+The page takes one asset at a time. It calls the pool's `flashLoanSimple` with a receiver contract you deployed and your own calldata. The section is open on the page. You need your own receiver to use it.
+
+Multi-asset flash loans are not offered yet.
 
 ---
 
@@ -127,10 +95,18 @@ the oracle falls back to a last-known value rather than breaking the market.
 
 | You see | Why / what to do |
 |---|---|
-| "Only N USDC is liquid right now…" on withdraw | The pool is mostly borrowed out. Withdraw less, or repay borrowers' debt frees liquidity. |
-| "This would drop your health factor below 1" | Withdrawing/borrowing that much would make you liquidatable. Repay debt or do less. |
-| Liquidate button greyed out | The position is healthy (HF ≥ 1), or it's your own position. |
-| Wallet won't connect | Make sure your wallet is unlocked and on Hadrian (chain 200010). Refresh after installing an extension. |
-| A price looks "stuck" briefly | The market data is cached ~30s server-side; on-chain prices update continuously. |
+| "Only N USDC is liquid right now" on withdraw | Most of the pool is borrowed out. Take less, or wait for repayments. |
+| "Pool has only N available" on borrow | The pool holds less than you asked for. Borrow less, or supply more so the pool has more to lend. |
+| "This would drop your health factor below 1" | The action would make you liquidatable. Repay debt or do less. |
+| Liquidate button is off | The health factor is 1.00 or higher, or it is your own position. |
+| A Solana wallet shows no balance | Switch the wallet to its Solana test network (see Getting started). |
+| A wallet will not connect | Unlock the wallet and refresh after installing an extension. |
+| "Wrong network. Switch to Solana · via Rome." | Approve the wallet's prompt to add or switch the network. |
 
 ---
+
+## Running your own copy
+
+The demo is a standalone Next.js app (`npm install`, `npm run build`, `npm start`; see the README for local development).
+
+App config (chain id, RPC, contract addresses) comes from the vendored registry files in `lib/` (`hadrian-chain.json`, `aave-hadrian.json`). Do not hardcode addresses elsewhere. Two environment variables point the same-origin proxies at other upstreams: `ROME_RPC_UPSTREAM` (the Rome RPC) and `SOLANA_RPC_UPSTREAM` (the Solana RPC; the default is the public Solana devnet RPC).

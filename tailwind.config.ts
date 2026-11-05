@@ -9,14 +9,14 @@ const config: Config = {
     extend: {
       fontFamily: {
         serif: [
-          "Georgia",
+          "Literata",
           "Iowan Old Style",
           "Palatino Linotype",
           "Georgia",
           "serif",
         ],
         sans: [
-          "system-ui",
+          "DM Sans",
           "-apple-system",
           "BlinkMacSystemFont",
           "Helvetica Neue",

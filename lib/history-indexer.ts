@@ -1,31 +1,22 @@
 // Per-user history feed for /history.
 //
-// Strategy: for each Aave V3 event we care about (Supply, Withdraw, Borrow,
-// Repay, FlashLoan, LiquidationCall), getLogs with the user filtered on
-// whichever topic actually carries them. Decoded entries flow into a
-// unified row shape that data.jsx's HISTORY array consumes.
+// One address-filtered getLogs per window (all event types at once), decoded
+// locally and cached in memory per chain. The first scan walks from the pool's
+// first log block in windows of at most 1,000,000 blocks (the Hadrian proxy
+// limit, inclusive); later requests only read the blocks after the last scan.
+// Concurrent requests share one in-flight scan. A user's history is filtered
+// from the cache.
 //
-// Topic indexing (Aave V3.6 IPool.sol):
-//   Supply          — reserve (topic 1), onBehalfOf (topic 2). `user`=msg.sender, non-indexed
-//   Withdraw        — reserve (1), user (2), to (3)
-//   Borrow          — reserve (1), onBehalfOf (2), referralCode (3). `user` non-indexed
-//   Repay           — reserve (1), user (2), repayer (3)
-//   FlashLoan       — target (1), asset (2), referralCode (3). `initiator` non-indexed
-//   LiquidationCall — collateralAsset (1), debtAsset (2), user (3)
-//
-// For Supply/Borrow → user = topic 2 (onBehalfOf, who carries the position).
-// For Withdraw/Repay → user = topic 2 (the position owner). repayer/to may
-//   be a delegate; we don't surface those distinctions in v1.
-// For FlashLoan → initiator is non-indexed. Filter post-decode.
-// For LiquidationCall → topic 3 is the borrower (liquidatee); for "as
-//   liquidator" rows we filter the non-indexed `liquidator` field post-decode.
-//
-// No caching — history is per-user, low-volume, called on /history mount.
+// Event args used for the user filter (Aave V3.6 IPool.sol):
+//   Supply onBehalfOf · Withdraw user · Borrow onBehalfOf · Repay user
+//   FlashLoan initiator (non-indexed) · LiquidationCall liquidator / user
 
-import { createPublicClient, http, defineChain, parseAbiItem, type Address, type PublicClient } from "viem";
+import { createPublicClient, http, defineChain, parseAbiItem, decodeEventLog, type Address, type PublicClient } from "viem";
 import { getAaveDeployment, getChain } from "./registry-config";
+import { POOL_DEPLOY_BLOCK } from "./pool-deploy-block";
 
-const BLOCK_SCAN_CHUNK = 5_000n;
+/** Hadrian serves address-filtered getLogs over at most this many blocks, inclusive. */
+export const MAX_LOG_WINDOW = 1_000_000n;
 
 export interface HistoryRow {
   day: string;
@@ -84,25 +75,81 @@ function _fmtTime(ts: number): string {
   return new Date(ts).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-async function _scanLogs(
-  client: PublicClient,
-  pool: Address,
-  event: typeof EVENTS[keyof typeof EVENTS],
-  fromBlock: bigint,
-  toBlock: bigint,
-  args?: Record<string, unknown>,
-) {
-  const out: Awaited<ReturnType<PublicClient["getLogs"]>> = [];
-  for (let start = fromBlock; start <= toBlock; start += BLOCK_SCAN_CHUNK) {
-    const end = start + BLOCK_SCAN_CHUNK - 1n > toBlock ? toBlock : start + BLOCK_SCAN_CHUNK - 1n;
-    const logs = await client.getLogs({
-      address: pool,
-      event: event as any,
-      fromBlock: start,
-      toBlock: end,
-      ...(args ? { args } : {}),
-    } as any);
-    out.push(...logs);
+/** Split [from, to] (inclusive) into windows of at most `size` blocks. */
+export function splitWindows(from: bigint, to: bigint, size: bigint = MAX_LOG_WINDOW): Array<[bigint, bigint]> {
+  const out: Array<[bigint, bigint]> = [];
+  for (let start = from; start <= to; start += size) {
+    const end = start + size - 1n > to ? to : start + size - 1n;
+    out.push([start, end]);
+  }
+  return out;
+}
+
+export interface CachedLog {
+  eventName: keyof typeof EVENTS;
+  args: Record<string, unknown>;
+  blockNumber: bigint;
+  transactionHash: string;
+}
+
+export interface ScanState {
+  logs: CachedLog[];
+  /** Last block fully scanned; start - 1 before the first scan. */
+  lastScannedBlock: bigint;
+  inflight?: Promise<void>;
+}
+
+/**
+ * Extend the cache up to `head`, one window at a time. Progress is kept after
+ * each window, so a failed scan resumes where it stopped. Concurrent callers
+ * share one in-flight scan (a caller that needs a newer head simply runs again).
+ */
+export async function extendScan(
+  state: ScanState,
+  head: bigint,
+  fetchWindow: (from: bigint, to: bigint) => Promise<CachedLog[]>,
+): Promise<void> {
+  while (state.inflight) await state.inflight;
+  if (state.lastScannedBlock >= head) return;
+  const run = (async () => {
+    for (const [from, to] of splitWindows(state.lastScannedBlock + 1n, head)) {
+      state.logs.push(...(await fetchWindow(from, to)));
+      state.lastScannedBlock = to;
+    }
+  })();
+  state.inflight = run;
+  try {
+    await run;
+  } finally {
+    if (state.inflight === run) state.inflight = undefined;
+  }
+}
+
+const EVENT_ABI = Object.values(EVENTS);
+const STATE_BY_CHAIN = new Map<number, ScanState>();
+const TS_BY_CHAIN = new Map<number, Map<bigint, number>>();
+
+/** Last block the history cache has scanned (0 before the first scan). For /api/status. */
+export function getHistoryLastScannedBlock(chainId: number): bigint {
+  const s = STATE_BY_CHAIN.get(chainId);
+  return s && s.lastScannedBlock >= POOL_DEPLOY_BLOCK ? s.lastScannedBlock : 0n;
+}
+
+async function _fetchWindow(client: PublicClient, pool: Address, from: bigint, to: bigint): Promise<CachedLog[]> {
+  const raw = await client.getLogs({ address: pool, fromBlock: from, toBlock: to });
+  const out: CachedLog[] = [];
+  for (const log of raw) {
+    try {
+      const d = decodeEventLog({ abi: EVENT_ABI, data: log.data, topics: log.topics as any });
+      out.push({
+        eventName: d.eventName as CachedLog["eventName"],
+        args: d.args as unknown as Record<string, unknown>,
+        blockNumber: log.blockNumber as bigint,
+        transactionHash: log.transactionHash as string,
+      });
+    } catch {
+      // Not one of the six events we show (e.g. ReserveDataUpdated) — skip.
+    }
   }
   return out;
 }
@@ -128,31 +175,39 @@ export async function loadUserHistory(chainId: number, user: Address, opts: { li
 
   const userLower = user.toLowerCase();
   const pool = dep.pool as Address;
-  const FROM = 0n;
 
-  // Run all six scans in parallel.
-  const [supplyLogs, withdrawLogs, borrowLogs, repayLogs, flashLoanLogs, liqLogs] = await Promise.all([
-    _scanLogs(client, pool, EVENTS.Supply,    FROM, currentBlock, { onBehalfOf: user }),
-    _scanLogs(client, pool, EVENTS.Withdraw,  FROM, currentBlock, { user }),
-    _scanLogs(client, pool, EVENTS.Borrow,    FROM, currentBlock, { onBehalfOf: user }),
-    _scanLogs(client, pool, EVENTS.Repay,     FROM, currentBlock, { user }),
-    // FlashLoan: initiator is non-indexed. Scan all + filter in memory.
-    _scanLogs(client, pool, EVENTS.FlashLoan, FROM, currentBlock),
-    // LiquidationCall: scan all + match either liquidator (non-indexed) or
-    // user (topic 3, the liquidatee). Could narrow with two queries but
-    // volume's low.
-    _scanLogs(client, pool, EVENTS.LiquidationCall, FROM, currentBlock),
-  ]);
+  let state = STATE_BY_CHAIN.get(chainId);
+  if (!state) {
+    state = { logs: [], lastScannedBlock: POOL_DEPLOY_BLOCK - 1n };
+    STATE_BY_CHAIN.set(chainId, state);
+  }
+  await extendScan(state, currentBlock, (from, to) => _fetchWindow(client, pool, from, to));
+
+  const isUser = (v: unknown) => typeof v === "string" && v.toLowerCase() === userLower;
+  const byEvent = (name: CachedLog["eventName"], key: string) =>
+    state!.logs.filter((l) => l.eventName === name && isUser(l.args[key]));
+  const supplyLogs = byEvent("Supply", "onBehalfOf");
+  const withdrawLogs = byEvent("Withdraw", "user");
+  const borrowLogs = byEvent("Borrow", "onBehalfOf");
+  const repayLogs = byEvent("Repay", "user");
+  const flashLoanLogs = byEvent("FlashLoan", "initiator");
+  const liqLogs = state.logs.filter(
+    (l) => l.eventName === "LiquidationCall" && (isUser(l.args.liquidator) || isUser(l.args.user)),
+  );
 
   const rows: HistoryRow[] = [];
-  const blockTimestampCache = new Map<bigint, number>();
+  let blockTimestampCache = TS_BY_CHAIN.get(chainId);
+  if (!blockTimestampCache) {
+    blockTimestampCache = new Map<bigint, number>();
+    TS_BY_CHAIN.set(chainId, blockTimestampCache);
+  }
 
   async function _resolveTs(blockNumber: bigint): Promise<number> {
-    const cached = blockTimestampCache.get(blockNumber);
+    const cached = blockTimestampCache!.get(blockNumber);
     if (cached !== undefined) return cached;
     const block = await client.getBlock({ blockNumber });
     const ts = Number(block.timestamp) * 1000;
-    blockTimestampCache.set(blockNumber, ts);
+    blockTimestampCache!.set(blockNumber, ts);
     return ts;
   }
 

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { _memoTtlReset, memoTtl } from "./memo";
+import { _memoTtlReset, memoRefresh, memoTtl } from "./memo";
 
 beforeEach(() => {
   _memoTtlReset();
@@ -187,5 +187,38 @@ describe("memoTtl — stale-while-revalidate", () => {
     // off an exhausted mock and crashed.
     expect(loader).toHaveBeenCalledTimes(5);
     errSpy.mockRestore();
+  });
+});
+
+describe("memoRefresh: the newest result wins", () => {
+  it("an older background refresh that lands after a newer post-action refresh does not overwrite it", async () => {
+    vi.useFakeTimers();
+    await expect(memoTtl("k", 1000, async () => "v1", { staleTtlMs: 60_000 })).resolves.toBe("v1");
+    vi.advanceTimersByTime(2000);
+    // The stale hit starts a slow background refresh (started first)...
+    let slow!: (v: string) => void;
+    const bg = vi.fn(() => new Promise<string>((r) => (slow = r)));
+    await memoTtl("k", 1000, bg, { staleTtlMs: 60_000 });
+    // ...then a post-action refresh starts later and lands first.
+    vi.advanceTimersByTime(500);
+    await expect(memoRefresh("k", 1000, async () => "after-action")).resolves.toBe("after-action");
+    // The older refresh lands last with an older value: it must not replace the newer one.
+    slow("old-background");
+    await vi.advanceTimersByTimeAsync(0);
+    await expect(memoTtl("k", 1000, async () => "never", { staleTtlMs: 60_000 })).resolves.toBe("after-action");
+  });
+
+  it("an older post-action refresh does not replace a newer background value either", async () => {
+    vi.useFakeTimers();
+    await memoTtl("k", 1000, async () => "v1", { staleTtlMs: 60_000 });
+    vi.advanceTimersByTime(2000);
+    let slowRefresh!: (v: string) => void;
+    const refreshP = memoRefresh("k", 1000, () => new Promise<string>((r) => (slowRefresh = r)));
+    vi.advanceTimersByTime(500);
+    await memoTtl("k", 1000, async () => "newer-background", { staleTtlMs: 60_000 });
+    await vi.advanceTimersByTimeAsync(0);
+    slowRefresh("older-refresh");
+    await expect(refreshP).resolves.toBe("older-refresh"); // the caller still gets what it asked for
+    await expect(memoTtl("k", 1000, async () => "never", { staleTtlMs: 60_000 })).resolves.toBe("newer-background");
   });
 });

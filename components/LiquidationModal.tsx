@@ -1,8 +1,8 @@
 "use client";
 
 // LiquidationModal — drives Pool.liquidationCall through useAaveLiquidate.
-// Caller picks a debtToCover amount (default = ½ debt, the V3 close
-// factor on healthy markets) and the modal previews collateral-out +
+// Caller picks a debtToCover amount (default per Aave v3.6, see
+// lib/liquidation-amount.ts) and the modal previews collateral-out +
 // bonus before sign. Reuses ModalShell + Spinner + ApproveStepper +
 // OverviewRow + SpinnerRow + TxLinkRow from ActionModal.tsx.
 
@@ -31,7 +31,8 @@ import {
   IconExternal,
 } from "@/components/icons";
 import { evmExplorerTxUrl } from "@/lib/registry-config";
-import { fmt } from "@/lib/format";
+import { fmt, fmtAmount, fmtUsd } from "@/lib/format";
+import { defaultDebtUsd, previewCollateral, toTokenString } from "@/lib/liquidation-amount";
 import { hadrian } from "@/lib/wagmi";
 import { useAaveLiquidate } from "@/hooks/useAaveLiquidate";
 import type { AtRiskRow, Reserve } from "@/lib/types";
@@ -76,23 +77,16 @@ const LiquidationModalInner = ({
   const collat = reservesBySymbol[row.collatSym];
   const debt = reservesBySymbol[row.debtSym];
 
-  // Aave V3 close factor: 50% normally, but 100% once HF < 0.95
-  // (CLOSE_FACTOR_HF_THRESHOLD). A partial liquidation that leaves a
-  // remaining debt below the protocol's MIN_LEFTOVER reverts with
-  // MustNotLeaveDust (0xb629b0e4) — common on small positions. So when a
-  // 100% close is allowed we default to the FULL debt and round UP slightly
-  // (Aave caps debtToCover at the actual debt, so over-covering is safe and
-  // dust-free); only in the 50%-close band do we floor to half.
-  const fullClose = row.hf < 0.95;
-  const maxDebtUsd = fullClose ? row.debtUsd : row.debtUsd / 2;
-
-  const initialAmount = useMemo(() => {
-    if (!debt || debt.priceUsd <= 0) return "0";
-    const tokens = maxDebtUsd / debt.priceUsd;
-    // Full close: round up + 1% headroom so accrued interest can't leave dust.
-    // Partial: floor to stay under the 50% close factor.
-    return fullClose ? String(Math.ceil(tokens * 1.01)) : String(Math.floor(tokens));
-  }, [debt, maxDebtUsd, fullClose]);
+  // Default amount follows Aave v3.6 (see lib/liquidation-amount.ts): full debt on small
+  // positions or HF <= 0.95, else at most half the total debt, lowered so no dust is left.
+  const def = useMemo(
+    () => defaultDebtUsd({ hf: row.hf, totalDebtUsd: row.debtUsd, debtAssetUsd: row.debtAssetUsd, collatUsd: row.collatUsd, bonusPct: row.bonusPct }),
+    [row.hf, row.debtUsd, row.debtAssetUsd, row.collatUsd, row.bonusPct],
+  );
+  const initialAmount = useMemo(
+    () => (debt ? toTokenString(def.usd, debt.priceUsd, debt.decimals, def.full) : "0"),
+    [debt, def],
+  );
 
   const [amount, setAmount] = useState<string>(initialAmount);
 
@@ -115,7 +109,7 @@ const LiquidationModalInner = ({
     return (
       <ModalShell open onClose={onClose} title="Liquidate" width={500}>
         <Banner variant="danger" icon={<IconAlert size={16} />}>
-          Reserve metadata missing for {row.collatSym} / {row.debtSym}.
+          Market data missing for {row.collatSym} / {row.debtSym}.
         </Banner>
       </ModalShell>
     );
@@ -123,21 +117,22 @@ const LiquidationModalInner = ({
 
   const amtN = Number(amount) || 0;
   const debtUsd = amtN * debt.priceUsd;
-  const collatOutUsd = debtUsd * (1 + row.bonusPct);
-  const collatOut = collat.priceUsd > 0 ? collatOutUsd / collat.priceUsd : 0;
-  const bonusUsd = debtUsd * row.bonusPct;
+  const { outUsd: collatOutUsd, tokens: collatOut, bonusUsd } = previewCollateral(debtUsd, row.bonusPct, row.collatUsd, collat.priceUsd);
 
   const approveExplorer = liquidate.approveHash ? evmExplorerTxUrl(hadrian.id, liquidate.approveHash) : undefined;
   const executeExplorer = liquidate.executeHash ? evmExplorerTxUrl(hadrian.id, liquidate.executeHash) : undefined;
 
   const showStepper = liquidate.needsApprove;
-  const submitDisabled = liquidate.debtToCoverRaw === 0n || liquidate.phase === "approving" || liquidate.phase === "executing";
+  const busy = ["funding", "approving", "executing", "sweeping"].includes(liquidate.phase);
+  const submitDisabled = liquidate.debtToCoverRaw === 0n || busy;
 
   return (
     <ModalShell
       open
       onClose={onClose}
       title={`Liquidate ${fmt.addr(row.borrower, 6, 4)}`}
+      dismissible={!busy}
+      dismissOnGround={false}
       icon={
         <div style={{
           width: 28, height: 28, borderRadius: 28,
@@ -152,8 +147,8 @@ const LiquidationModalInner = ({
       width={500}
     >
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-        <SwatchCard label="Collateral asset" symbol={row.collatSym} sub={fmt.usd(row.collatUsd, { compact: true })} />
-        <SwatchCard label="Debt asset" symbol={row.debtSym} sub={fmt.usd(row.debtUsd, { compact: true })} />
+        <SwatchCard label="Collateral" symbol={row.collatSym} sub={fmtUsd(row.collatUsd)} />
+        <SwatchCard label="Debt" symbol={row.debtSym} sub={fmtUsd(row.debtAssetUsd)} />
       </div>
 
       {(liquidate.phase === "editing" || liquidate.phase === "error") ? (
@@ -166,7 +161,7 @@ const LiquidationModalInner = ({
             }}
             suffix={row.debtSym}
             balanceLabel="Max"
-            balanceValue={`${fmt.usd(maxDebtUsd, { compact: true })} (${fullClose ? "full debt — 100% close" : "½ debt — 50% close"})`}
+            balanceValue={`${fmtUsd(def.usd)} (${def.full ? "full debt" : "max allowed"})`}
             onMax={() => setAmount(initialAmount)}
           />
 
@@ -181,8 +176,8 @@ const LiquidationModalInner = ({
               label={`${row.collatSym} (incl. bonus)`}
               value={
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-                  <span className="mono tabular" style={{ color: "var(--fg1)", fontWeight: 500 }}>~{fmt.num(collatOut)}</span>
-                  <span style={{ color: "var(--fg2)" }}>{fmt.usd(collatOutUsd, { compact: true })}</span>
+                  <span className="mono tabular" style={{ color: "var(--fg1)", fontWeight: 500 }}>~{fmtAmount(collatOut)}</span>
+                  <span style={{ color: "var(--fg2)" }}>{fmtUsd(collatOutUsd)}</span>
                 </span>
               }
             />
@@ -190,14 +185,14 @@ const LiquidationModalInner = ({
               label="Liquidation bonus"
               value={
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "var(--hf-safe)" }}>
-                  +<span className="mono tabular">{fmt.usd(bonusUsd, { compact: true })}</span>
+                  +<span className="mono tabular">{fmtUsd(bonusUsd)}</span>
                   <Tag tone="success">{(row.bonusPct * 100).toFixed(1)}%</Tag>
                 </span>
               }
             />
             <OverviewRow
-              label="Borrower HF (current)"
-              value={<HealthFactorPill hf={row.hf} size="sm" showLabel={false} />}
+              label="Borrower HF"
+              value={<HealthFactorPill hf={row.hf} size="sm" showLabel={false} dp={3} />}
             />
           </div>
 
@@ -205,6 +200,9 @@ const LiquidationModalInner = ({
 
           {liquidate.phase === "error" && liquidate.error ? (
             <Banner variant="danger" icon={<IconAlert size={16} />}>{liquidate.error}</Banner>
+          ) : null}
+          {liquidate.phase === "error" && executeExplorer ? (
+            <TxLinkRow label="Liquidation transaction" hash={liquidate.executeHash!} href={executeExplorer} />
           ) : null}
 
           <Button
@@ -219,9 +217,12 @@ const LiquidationModalInner = ({
         </>
       ) : null}
 
+      {liquidate.phase === "funding" ? <SpinnerRow caption={`Moving ${row.debtSym} from your wallet…`} /> : null}
+      {liquidate.phase === "sweeping" ? <SpinnerRow caption="Sending collateral to your wallet…" /> : null}
+
       {liquidate.phase === "approving" ? (
         <>
-          <SpinnerRow caption={`Approving ${row.debtSym} for Pool…`} />
+          <SpinnerRow caption={`Approving ${row.debtSym}…`} />
           {approveExplorer ? (
             <TxLinkRow label="Approval transaction" hash={liquidate.approveHash!} href={approveExplorer} />
           ) : null}
@@ -255,10 +256,10 @@ const LiquidationModalInner = ({
             <IconCheck size={24} />
           </div>
           <div style={{ fontFamily: "var(--font-serif)", fontSize: 22, color: "var(--fg1)" }}>
-            Liquidation complete.
+            Done.
           </div>
           <div style={{ color: "var(--fg2)", fontSize: 13 }}>
-            ~{fmt.num(collatOut)} {row.collatSym} received · {fmt.usd(collatOutUsd, { compact: true })}
+            ~{fmtAmount(collatOut)} {row.collatSym} received · {fmtUsd(collatOutUsd)}
           </div>
           {executeExplorer ? (
             <a
@@ -281,9 +282,9 @@ const LiquidationModalInner = ({
         </div>
       ) : null}
 
-      {liquidate.phase === "approving" || liquidate.phase === "executing" ? (
+      {busy ? (
         <Button variant="secondary" fullWidth size="lg" disabled>
-          <Spinner /> {liquidate.phase === "approving" ? "Awaiting approval…" : "Submitting…"}
+          <Spinner /> {liquidate.phase === "approving" ? "Awaiting approval…" : liquidate.phase === "funding" ? "Moving funds…" : liquidate.phase === "sweeping" ? "Sending to your wallet…" : "Submitting…"}
         </Button>
       ) : null}
 

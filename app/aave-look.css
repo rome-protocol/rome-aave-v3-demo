@@ -1,0 +1,73 @@
+/* Joins this app's own screens to the Rome app look. Loaded last, after theme.css (the Rome DEX's file, kept identical so a change in the guide can be copied over).
+   The screens here are styled inline with this app's own tokens (--bg-surface, --fg1, --hf-safe, --rome-purple ...). Those names are re-pointed at the look's
+   tokens (--panel, --ink, --up-text, --btn ...), so every inline colour follows the palette and the Light / System / Dark choice with no change to the screens.
+   Same rule as theme.css: everything sits under :root[data-rome-theme]. */
+
+:root[data-rome-theme] {
+  /* surfaces */
+  --bg-canvas: transparent;          /* the page wrappers paint nothing: the field (theme.css body::before) shows through */
+  --bg-surface: var(--panel);        /* opaque: dialogs, menus, empty states (cards are the glass .card) */
+  --bg-surface-2: var(--panel-2);    /* wells inside a card: rows, inputs, notes */
+  --bg-surface-3: var(--panel-3);    /* a pressed or raised control */
+  --bg-overlay: var(--overlay);
+
+  /* text */
+  --fg1: var(--ink);
+  --fg2: var(--muted);
+  --fg3: var(--faint);
+  --fg-inverse: var(--ground);
+  --fg-brand: var(--bridge);
+  --link-hover: var(--bridge-2);
+
+  /* borders */
+  --border-subtle: var(--line-2);
+  --border-default: var(--line);
+  --border-strong: var(--line-strong);
+  --border-brand: color-mix(in srgb, var(--bridge) 40%, transparent);
+
+  /* health factor and status: the look's status colours (4.5:1 on every surface, both palettes) */
+  --hf-safe: var(--up-text);
+  --hf-warn: var(--warn);
+  --hf-risk: var(--warn);
+  --hf-danger: var(--down);
+  --hf-safe-bg: color-mix(in srgb, var(--up) 12%, transparent);
+  --hf-warn-bg: color-mix(in srgb, var(--warn) 12%, transparent);
+  --hf-risk-bg: color-mix(in srgb, var(--warn) 18%, transparent);
+  --hf-danger-bg: color-mix(in srgb, var(--down) 14%, transparent);
+
+  /* the accent and what sits on it */
+  --rome-purple: var(--btn);
+  --rome-purple-hover: var(--btn-hover);
+  --rome-purple-tint: var(--ring);
+  --on-rome-purple: var(--on-btn);
+
+  /* the page: the look's field replaces this app's old top glow */
+  --header-bg: var(--top-bg);
+  --glow-1: none;
+  --glow-2: none;
+
+  /* boxes inside a card take the look's control radius */
+  --r-md: var(--rad-ctl);
+}
+
+/* Text on a solid status fill (the liquidatable banner): dark on Aurora's bright pink, white on Daylight's deep red */
+:root[data-rome-theme="dark"] { --on-danger: #1A0A0A; --on-safe: #07140E; }
+:root[data-rome-theme="light"] { --on-danger: #FFFFFF; --on-safe: #FFFFFF; }
+
+/* A warning note, off the warn colour like .note.ok and .note.err in theme.css (the tint sits on the solid well) */
+:root[data-rome-theme] .note.warn { background: linear-gradient(color-mix(in srgb, var(--warn) 12%, transparent), color-mix(in srgb, var(--warn) 12%, transparent)), var(--panel-2); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
+
+/* Table rows: the look's hover colour and hairline */
+:root[data-rome-theme] .rome-table tbody tr:hover { background: var(--hover); }
+:root[data-rome-theme] .rome-table th { border-bottom-color: var(--line); }
+:root[data-rome-theme] .rome-table td { border-bottom-color: var(--line-2); }
+:root[data-rome-theme] .hairline { background: var(--line-2); }
+
+/* The theme popover opens under the header button, at its right edge */
+:root[data-rome-theme] .theme-pop { z-index: 80; }
+
+/* Headline figures that are not .stat tiles (the asset page cards, the dashboard hero): DM Sans Bold, like .stat .v (guide section 5). Amounts and tables stay Plex Mono. */
+:root[data-rome-theme] .headline-num { font-family: var(--sans); font-weight: 700; letter-spacing: -.03em; line-height: 1.1; white-space: nowrap; text-shadow: none; }
+
+/* A connected wallet row in the chooser says Disconnect in the status red, like the account menu */
+:root[data-rome-theme] .ci-act.ci-out { color: var(--down); }

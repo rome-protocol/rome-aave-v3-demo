@@ -13,11 +13,11 @@
 // account_locks cap when 2+ cached SPL wrappers are involved. Rome's
 // answer is to pre-approve in a separate setup tx, then run flashLoan
 // without an in-callback approve. The receiver was deployed + init'd
-// once via `hardhat deploy-flash-receiver --demo true` (Aave v3);
+// once via `hardhat deploy-flash-receiver --demo true` (rome-aave-v3);
 // the UI just calls Pool.flashLoan against it.
 
 import { useMemo, useState } from "react";
-import { useAccount } from "wagmi";
+import { useActiveAddress } from "@/hooks/useActiveLane";
 import { useUniWallet } from "@/hooks/useUniWallet";
 import {
   AmountInput,
@@ -38,15 +38,15 @@ import {
   IconExternal,
 } from "@/components/icons";
 import { useAaveMultiFlashLoan } from "@/hooks/useAaveMultiFlashLoan";
-import { fmt } from "@/lib/format";
+import { fmt, fmtPrice, fmtUsd } from "@/lib/format";
+import { Hint } from "@/components/Tip";
+import { premiumFraction } from "@/lib/flash-premium";
 import { evmExplorerTxUrl } from "@/lib/registry-config";
 import { hadrian } from "@/lib/wagmi";
 import type { Reserve } from "@/lib/types";
 import config from "@/lib/aave-hadrian.json";
 
-const FLASH_PREMIUM = 0.0009;
-
-// The demo receiver address comes from Aave v3's deploy artifact,
+// The demo receiver address comes from rome-aave-v3's deploy artifact,
 // vendored into lib/aave-hadrian.json#flashLoanReceivers.demoMulti.
 const DEMO_RECEIVER = (config as any).flashLoanReceivers?.demoMulti?.address as
   | `0x${string}`
@@ -58,9 +58,9 @@ interface Props {
 }
 
 export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
-  const { isConnected } = useAccount();
+  const { isConnected } = useActiveAddress();
   const wallet = useUniWallet();
-  const openConnectModal = () => wallet.openFilteredWalletModal("evm");
+  const openConnectModal = () => wallet.openFilteredWalletModal("all");
 
   // Default selection: the first two cached reserves that the deployed
   // receiver was pre-init'd for (wUSDC + wETH on Hadrian).
@@ -87,7 +87,6 @@ export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
     pool: pool as `0x${string}`,
     receiver: DEMO_RECEIVER,
     assets: selectedAssets,
-    flashPremiumBps: 9,
   });
 
   const toggleAsset = (sym: string) => {
@@ -111,6 +110,8 @@ export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
     (acc, a) => acc + (Number(a.amount) || 0) * a.priceUsd,
     0,
   );
+  const premiumKnown = flash.premiumBps !== undefined;
+  const FLASH_PREMIUM = premiumFraction(flash.premiumBps ?? 0);
   const totalPremiumUsd = totalUsd * FLASH_PREMIUM;
 
   const executeExplorer = flash.executeHash
@@ -123,24 +124,16 @@ export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
     flash.phase === "fundingPremium" ||
     flash.phase === "executing";
 
-  if (!DEMO_RECEIVER) {
-    return (
-      <div className="card" style={{ padding: 20 }}>
-        <Banner variant="warn" icon={<IconAlert size={16} />}>
-          Multi-asset flash loan unavailable on this chain — no receiver registered in <code>lib/aave-hadrian.json#flashLoanReceivers.demoMulti</code>. Deploy via{" "}
-          <code>hardhat deploy-flash-receiver --demo true</code> on Aave v3.
-        </Banner>
-      </div>
-    );
-  }
+  // No receiver registered on this chain: the section stays hidden.
+  if (!DEMO_RECEIVER) return null;
 
   return (
     <div className="flash-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
       {/* LEFT — the transaction */}
       <div className="card" style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18 }}>
-        <Eyebrow>Multi-asset Composer</Eyebrow>
+        <Eyebrow>Multi-asset</Eyebrow>
         <div>
-          <div style={{ color: "var(--fg2)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Pick 1-3 assets</div>
+          <div style={{ color: "var(--fg2)", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>Assets (1 to 3)</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {cached.map((r) => {
               const selected = selectedSymbols.includes(r.symbol);
@@ -181,7 +174,7 @@ export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
                   onChange={(v) => setAmount(a.symbol, v)}
                   suffix={a.symbol}
                   balanceLabel="Price"
-                  balanceValue={fmt.usd(a.priceUsd)}
+                  balanceValue={fmtPrice(a.priceUsd)}
                 />
               </div>
             ))}
@@ -195,16 +188,16 @@ export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
           padding: 14,
         }}>
           <OverviewRow
-            label="Total notional"
-            value={<span className="tabular" style={{ color: "var(--fg1)", fontWeight: 500 }}>{fmt.usd(totalUsd)}</span>}
+            label="Total"
+            value={<span className="tabular" style={{ color: "var(--fg1)", fontWeight: 500 }}>{fmtUsd(totalUsd)}</span>}
           />
           <OverviewRow
-            label={`Premium (${fmt.pct(FLASH_PREMIUM, 2)} per asset)`}
-            value={<span className="tabular" style={{ color: "var(--fg1)" }}>~ {fmt.usd(totalPremiumUsd)}</span>}
+            label={premiumKnown ? `Premium (${fmt.pct(FLASH_PREMIUM, 2)} per asset)` : "Premium"}
+            value={<span className="tabular" style={{ color: "var(--fg1)" }}>{premiumKnown ? `~ ${fmtUsd(totalPremiumUsd)}` : "\u2014"}</span>}
           />
           <OverviewRow
             label="Receiver"
-            value={<code className="mono" style={{ fontSize: 11, color: "var(--fg1)" }}>{shorten(DEMO_RECEIVER)} (demo, pre-init&apos;d)</code>}
+            value={<code className="mono" style={{ fontSize: 11, color: "var(--fg1)" }}>{shorten(DEMO_RECEIVER)}</code>}
           />
         </div>
 
@@ -221,11 +214,11 @@ export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
             onClick={() => void flash.submit()}
           >
             {flash.phase === "fundingPremium" ? (
-              <><Spinner /> Funding premium ({flash.fundingTxHashes.length}/{selectedAssets.length})…</>
+              <><Spinner /> Premium ({flash.fundingTxHashes.length}/{selectedAssets.length})…</>
             ) : flash.phase === "executing" ? (
-              <><Spinner /> Running Pool.flashLoan…</>
+              <><Spinner /> Sending…</>
             ) : (
-              <><IconBolt size={14} /> Execute multi-asset flash loan</>
+              <><IconBolt size={14} /> Run flash loan</>
             )}
           </Button>
         )}
@@ -235,7 +228,7 @@ export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
             {flash.fundingTxHashes.map((h, i) => (
               <div key={i}>
                 {h === "0x" ? (
-                  <>Step {i + 1}/{selectedAssets.length}: pre-funded — {selectedAssets[i].symbol} skipped</>
+                  <>Step {i + 1}/{selectedAssets.length}: {selectedAssets[i].symbol} already funded</>
                 ) : (
                   <>Step {i + 1}/{selectedAssets.length}: funded {selectedAssets[i].symbol} premium · <code className="mono" style={{ fontSize: 11 }}>{shorten(h)}</code></>
                 )}
@@ -245,7 +238,7 @@ export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
         ) : null}
 
         {flash.executeHash && executeExplorer ? (
-          <TxLinkRow label="Multi-asset flashLoan transaction" hash={flash.executeHash as `0x${string}`} href={executeExplorer} />
+          <TxLinkRow label="Transaction" hash={flash.executeHash as `0x${string}`} href={executeExplorer} />
         ) : null}
 
         {flash.phase === "success" && executeExplorer ? (
@@ -260,7 +253,7 @@ export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
             alignItems: "center",
             gap: 8,
           }}>
-            <IconCheck size={14} /> Multi-asset flash loan executed atomically.
+            <IconCheck size={14} /> Done.
             <a
               href={executeExplorer}
               target="_blank"
@@ -282,25 +275,10 @@ export function MultiAssetFlashLoanForm({ reserves, pool }: Props) {
         <div className="card" style={{ padding: 20 }}>
           <Eyebrow style={{ marginBottom: 10 }}>How it works</Eyebrow>
           <p style={{ margin: 0, color: "var(--fg2)", fontSize: 13, lineHeight: 1.6 }}>
-            Borrow 2-3 assets at once with <strong style={{ color: "var(--fg1)" }}>zero collateral</strong>, then repay them
-            {" "}+ a {fmt.pct(FLASH_PREMIUM, 2)} premium — all inside a single <code className="mono">Pool.flashLoan</code> call.
-            If repayment fails, the whole transaction reverts as if it never happened.
+            Borrow 2 to 3 assets with <strong style={{ color: "var(--fg1)" }}>zero collateral</strong> and repay
+            {flash.premiumBps ? ` plus a ${fmt.pct(FLASH_PREMIUM, 2)} premium` : ""} in the same call. If repayment fails, the whole transaction reverts.
+            <Hint text="The receiver is approved once in a setup transaction, so the flash loan itself carries no approval. That keeps a multi-asset loan inside Solana's per-transaction account limit." />
           </p>
-        </div>
-
-        <div className="card" style={{ padding: 20 }}>
-          <Eyebrow style={{ marginBottom: 10 }}>Rome pre-approve pattern</Eyebrow>
-          <p style={{ margin: 0, color: "var(--fg2)", fontSize: 13, lineHeight: 1.6 }}>
-            Solana caps how many accounts one transaction can touch. Aave&rsquo;s usual in-callback
-            {" "}<code className="mono">approve</code> would push a 2-asset flash loan over that cap — so Rome
-            {" "}<strong style={{ color: "var(--fg1)" }}>pre-approves</strong> the receiver in a one-time setup tx,
-            and the flash-loan tx itself carries no extra approve.
-          </p>
-          <div style={{ marginTop: 12, fontSize: 12, color: "var(--fg2)" }}>
-            Receiver <code className="mono" style={{ color: "var(--fg1)" }}>{shorten(DEMO_RECEIVER)}</code>
-            {" "}· demo, pre-init&apos;d for the cached wrappers. Source:
-            {" "}<code className="mono">PreApprovedFlashReceiverBase.sol</code>.
-          </div>
         </div>
       </div>
     </div>

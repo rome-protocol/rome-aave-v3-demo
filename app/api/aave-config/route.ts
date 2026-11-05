@@ -11,8 +11,10 @@
 // Concurrent misses share one upstream call via memoTtl's promise reuse.
 
 import { NextResponse } from "next/server";
+import { apiError } from "@/lib/api-error";
 import { buildDemoConfig } from "@/lib/aave-reader";
-import { memoTtl } from "@/lib/memo";
+import { memoRefresh, memoTtl } from "@/lib/memo";
+import { cacheControlFor, wantsFresh } from "@/lib/fresh";
 import { DEFAULT_CHAIN_ID } from "@/lib/registry-config";
 
 export const dynamic = "force-dynamic";
@@ -26,19 +28,16 @@ export async function GET(req: Request) {
   }
 
   try {
-    const config = await memoTtl(
-      `aave-config:${chainId}`,
-      30_000,
-      () => buildDemoConfig(chainId),
-      { staleTtlMs: 5 * 60_000 },
-    );
+    const key = `aave-config:${chainId}`;
+    const fresh = wantsFresh(searchParams);
+    const load = () => buildDemoConfig(chainId);
+    const config = fresh
+      ? await memoRefresh(key, 30_000, load)
+      : await memoTtl(key, 30_000, load, { staleTtlMs: 5 * 60_000 });
     return NextResponse.json(config, {
-      headers: { "Cache-Control": "public, max-age=10, s-maxage=10" },
+      headers: { "Cache-Control": cacheControlFor(fresh, "public, max-age=10, s-maxage=10") },
     });
-  } catch (err: any) {
-    return NextResponse.json(
-      { error: err?.message ?? String(err) },
-      { status: 500 },
-    );
+  } catch (err: unknown) {
+    return apiError("/api/aave-config", err);
   }
 }

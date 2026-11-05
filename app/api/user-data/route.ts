@@ -10,8 +10,10 @@
 // upstream call via memoTtl's promise reuse.
 
 import { NextResponse } from "next/server";
+import { apiError } from "@/lib/api-error";
 import { loadFullUserData } from "@/lib/aave-reader";
-import { memoTtl } from "@/lib/memo";
+import { memoRefresh, memoTtl } from "@/lib/memo";
+import { cacheControlFor, wantsFresh } from "@/lib/fresh";
 import { DEFAULT_CHAIN_ID } from "@/lib/registry-config";
 
 export const dynamic = "force-dynamic";
@@ -29,13 +31,14 @@ export async function GET(req: Request) {
   }
   try {
     const lower = user.toLowerCase() as `0x${string}`;
-    const data = await memoTtl(`user-data:${chainId}:${lower}`, 5_000, () =>
-      loadFullUserData(chainId, lower),
-    );
+    const key = `user-data:${chainId}:${lower}`;
+    const fresh = wantsFresh(searchParams);
+    const load = () => loadFullUserData(chainId, lower);
+    const data = fresh ? await memoRefresh(key, 5_000, load) : await memoTtl(key, 5_000, load);
     return NextResponse.json(data, {
-      headers: { "Cache-Control": "public, max-age=5, s-maxage=5" },
+      headers: { "Cache-Control": cacheControlFor(fresh, "public, max-age=5, s-maxage=5") },
     });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });
+  } catch (err: unknown) {
+    return apiError("/api/user-data", err);
   }
 }

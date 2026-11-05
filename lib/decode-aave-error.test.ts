@@ -61,6 +61,16 @@ describe("decodeAaveError", () => {
     );
   });
 
+  it("decodes MustNotLeaveDust with the v3.6 wording, no 0.95 claim", () => {
+    const out = decodeAaveError({ cause: { data: "0xb629b0e4" } });
+    expect(out).toMatch(/leftover/i);
+    expect(out).not.toMatch(/0\.95/);
+  });
+
+  it("decodes SelfLiquidation, which the old map missed", () => {
+    expect(decodeAaveError({ cause: { data: "0x44511af1" } })).toMatch(/your own position/i);
+  });
+
   it("falls back to shortMessage for unknown selectors", () => {
     const err = { shortMessage: "Some novel error", message: "long detail" };
     expect(decodeAaveError(err)).toBe("Some novel error");

@@ -1,8 +1,8 @@
+import hadrianChain from "./lib/hadrian-chain.json" with { type: "json" };
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   // `standalone` produces a self-contained `.next/standalone/` directory
-  // (server.js + bundled node_modules) the Docker `runner` stage copies in.
-  // Mirrors the Rome portals pattern.
+  // (server.js + bundled node_modules) you can copy to a server and start with `node server.js`.
   output: 'standalone',
   reactStrictMode: true,
   webpack: (config) => {
@@ -17,9 +17,19 @@ const nextConfig = {
   // non-Hadrian deploy.
   async rewrites() {
     return [
+      // Browsers ask for /favicon.ico regardless of the <link>; serve the logo.
+      { source: "/favicon.ico", destination: "/assets/logomark-purple.svg" },
       {
         source: "/api/rome-rpc",
         destination: process.env.ROME_RPC_UPSTREAM ?? "https://hadrian.testnet.romeprotocol.xyz/",
+      },
+      // The Solana lane broadcasts its signed v1 wires to the chain's Solana
+      // substrate RPC (never to the proxy); same CORS gap, same forwarder
+      // pattern. Default = the vendored chain.json's solana.rpc; override with
+      // SOLANA_RPC_UPSTREAM per deploy.
+      {
+        source: "/api/solana-rpc",
+        destination: process.env.SOLANA_RPC_UPSTREAM ?? hadrianChain.solana.rpc,
       },
     ];
   },

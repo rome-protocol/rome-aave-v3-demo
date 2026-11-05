@@ -31,6 +31,7 @@ import { ToastContainer } from "react-toastify";
 import { wagmiConfig } from "@/lib/wagmi";
 import { getChain, DEFAULT_CHAIN_ID } from "@/lib/registry-config";
 import { UniWalletProvider } from "@/components/UniWalletProvider";
+import { createAutoConnectOnce, readStoredSolanaWallet } from "@/utils/solanaAutoConnect";
 import "react-toastify/dist/ReactToastify.css";
 
 // Solana RPC endpoint. Defaults to the public RPC for the chain's anchored
@@ -44,8 +45,14 @@ const SOLANA_CLUSTER_RPC: Record<string, string> = {
   testnet: "https://api.testnet.solana.com",
   devnet: "https://api.devnet.solana.com",
 };
-const SOLANA_RPC_URL =
+const SOLANA_RPC_FALLBACK =
   process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? SOLANA_CLUSTER_RPC[SOLANA_CLUSTER] ?? SOLANA_CLUSTER_RPC.devnet;
+// In the browser every Solana read/send goes through the same-origin
+// forwarder (/api/solana-rpc → the chain's substrate RPC, next.config.mjs);
+// the substrate RPC has the same CORS gap as the EVM RPC. web3.js needs an
+// absolute URL, so the origin is added at runtime; SSR uses the fallback.
+const solanaEndpoint = () =>
+  typeof window !== "undefined" ? new URL("/api/solana-rpc", window.location.origin).toString() : SOLANA_RPC_FALLBACK;
 
 export function Providers({ children }: { children: ReactNode }) {
   // QueryClient must be stable across renders but per-tree (not module-level)
@@ -64,6 +71,10 @@ export function Providers({ children }: { children: ReactNode }) {
       }),
   );
 
+  // Only the wallet stored at page load reconnects silently, once. A click in the
+  // modal must not go down the same path (it would end the modal's connect early).
+  const [autoConnect] = useState(() => createAutoConnectOnce(readStoredSolanaWallet()));
+
   // Wallet adapter instances are referentially stable across renders.
   const solanaWallets = useMemo(
     () => [
@@ -77,9 +88,13 @@ export function Providers({ children }: { children: ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ConnectionProvider endpoint={SOLANA_RPC_URL}>
+      <ConnectionProvider endpoint={solanaEndpoint()}>
         <WagmiProvider config={wagmiConfig}>
-          <WalletProvider wallets={solanaWallets} autoConnect={false}>
+          {/* autoConnect: re-selects the stored wallet and reconnects it silently on load
+              (adapter.autoConnect(), no prompt for a trusted site). Without it the
+              Solana wallet is forgotten on every refresh. Gated so a modal click is
+              never auto-connected (see utils/solanaAutoConnect.ts). */}
+          <WalletProvider wallets={solanaWallets} autoConnect={autoConnect}>
             <WalletModalProvider>
               <UniWalletProvider>
                 {children}

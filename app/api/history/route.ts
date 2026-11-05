@@ -6,6 +6,7 @@
 //   limit   — optional row cap; defaults to 50
 
 import { NextResponse } from "next/server";
+import { apiError } from "@/lib/api-error";
 import { loadUserHistory } from "@/lib/history-indexer";
 import { DEFAULT_CHAIN_ID } from "@/lib/registry-config";
 
@@ -30,7 +31,6 @@ export async function GET(req: Request) {
     const data = await loadUserHistory(chainId, user as `0x${string}`, { limit });
     return NextResponse.json(data, { headers: { "Cache-Control": "no-store" } });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiError("/api/history", err);
   }
 }
