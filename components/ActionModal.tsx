@@ -34,6 +34,7 @@ import { useAaveAction, type ActionMode } from "@/hooks/useAaveAction";
 import { projectHealthFactor, type HfProjection } from "@/lib/hf-projection";
 import { hfTierStyle } from "@/components/primitives";
 import { checkActionSafety } from "@/lib/liquidity-guard";
+import { checkCollateralLimit } from "@/lib/collateral-limit";
 import type { Reserve, UserPosition, UserAggregate } from "@/lib/types";
 
 const PHASE_VERBS: Record<ActionMode, { title: string; verb: string; past: string }> = {
@@ -54,6 +55,8 @@ export interface ActionModalProps {
   reserve: Reserve | undefined;
   position: UserPosition | undefined;
   aggregate: UserAggregate | undefined;
+  /** All the user's positions, for the collateral-count rule. */
+  positions?: Record<string, UserPosition>;
   pool: `0x${string}` | undefined;
   availableBorrowsUsd: number;
   onClose: () => void;
@@ -65,6 +68,7 @@ export function ActionModal({
   reserve,
   position,
   aggregate,
+  positions,
   pool,
   availableBorrowsUsd,
   onClose,
@@ -76,6 +80,7 @@ export function ActionModal({
       reserve={reserve}
       position={position}
       aggregate={aggregate}
+      positions={positions}
       pool={pool}
       availableBorrowsUsd={availableBorrowsUsd}
       onClose={onClose}
@@ -88,6 +93,7 @@ interface InnerProps {
   reserve: Reserve;
   position: UserPosition | undefined;
   aggregate: UserAggregate | undefined;
+  positions: Record<string, UserPosition> | undefined;
   pool: `0x${string}` | undefined;
   availableBorrowsUsd: number;
   onClose: () => void;
@@ -98,6 +104,7 @@ const ActionModalInner = ({
   reserve,
   position,
   aggregate,
+  positions,
   pool,
   availableBorrowsUsd,
   onClose,
@@ -189,6 +196,8 @@ const ActionModalInner = ({
     projectedHfAfter: projection?.after,
   });
 
+  const collateralLimit = checkCollateralLimit({ mode, positions });
+
   const submitDisabled =
     action.amountRaw === 0n ||
     action.phase === "funding" ||
@@ -198,7 +207,8 @@ const ActionModalInner = ({
     action.phase === "depositing" ||
     action.phase === "relaying" ||
     action.phase === "sweeping" ||
-    !safetyCheck.ok;
+    !safetyCheck.ok ||
+    collateralLimit.blocked;
 
   const submitLabel = action.needsApprove
     ? `Approve ${symbol} and ${verbs.verb.toLowerCase()}`
@@ -242,6 +252,10 @@ const ActionModalInner = ({
               {fmtUsd(amtUsd)}
             </span>
           </div>
+
+          {collateralLimit.blocked ? (
+            <Banner variant="warn" icon={<IconAlert size={16} />}>{collateralLimit.message}</Banner>
+          ) : null}
 
           {!safetyCheck.ok && safetyCheck.message ? (
             <Banner variant="warn" icon={<IconAlert size={16} />}>{safetyCheck.message}</Banner>
@@ -644,7 +658,7 @@ const sensibleDefault = (symbol: string): number => {
   switch (symbol) {
     case "ETH":  return 0.05;
     case "SOL":  return 0.5;
-    case "WBTC": return 0.002;
+    case "BTC":  return 0.0013;
     default:     return 100;
   }
 };

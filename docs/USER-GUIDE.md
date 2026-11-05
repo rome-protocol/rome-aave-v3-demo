@@ -14,7 +14,7 @@ For how the protocol works and how to deploy the contracts, see
    - **Solana wallets:** Phantom and Solflare both work. Switch the wallet to its Solana test network first, or balances will not show. Phantom: Settings, Developer Settings, Testnet Mode, Solana Devnet. Solflare: Settings, Network, Devnet. The connect window repeats these steps.
 
    The app uses one wallet at a time. If you connect a wallet of the other kind, the first one is disconnected.
-2. **Get test funds.** There is no faucet. Move assets in with the [Rome Bridge](https://bridge-api.devnet.romeprotocol.xyz). You can supply USDC, ETH and SOL. USDC also pays the network fee.
+2. **Get test funds.** There is no faucet. Move assets in with the [Rome Bridge](https://bridge-api.devnet.romeprotocol.xyz). You can supply USDC, ETH, SOL and BTC. USDC also pays the network fee.
 3. **Theme.** The sun, monitor and moon choice in the header sets Light, System or Dark. The default is dark. The app remembers your choice.
 
 ### Solana wallets
@@ -60,13 +60,13 @@ E-mode lets you borrow more against correlated assets. This market has no e-mode
 
 ## Prices
 
-Prices are live. USDC, ETH and SOL are priced from Rome's price book, and the numbers on screen move with the market. Each asset goes through one small contract that reads its book feed. If the book stops updating, that contract answers with a fixed price that was set when the shim was deployed, so the market keeps working.
+Prices are live. USDC, ETH, SOL and BTC are priced from Rome's price book, and the numbers on screen move with the market. One price contract reads each asset's book entry. If the book stops updating, that contract answers with the price that was fixed when it was deployed, so the market keeps working.
 
 ---
 
 ## Liquidations
 
-A liquidator repays part of an underwater borrower's debt and receives that borrower's collateral at a discount. The discount is the **liquidation bonus**, 5% on all three assets.
+A liquidator repays part of an underwater borrower's debt and receives that borrower's collateral at a discount. The discount is the **liquidation bonus**, 5% on all four assets.
 
 - The **Liquidate** page lists borrowers whose health factor is under 1.05. The list refreshes about every 15 seconds. The default filter is "< 1.05". You can also pick "< 1.00", "< 1.10" or "All".
 - You can liquidate a position only **below health factor 1.00**. Rows between 1.00 and 1.05 are there to watch. Their Liquidate button is off, with "Close to liquidation" under it.
@@ -102,6 +102,7 @@ Multi-asset flash loans are not offered yet.
 | A Solana wallet shows no balance | Switch the wallet to its Solana test network (see Getting started). |
 | A wallet will not connect | Unlock the wallet and refresh after installing an extension. |
 | "Wrong network. Switch to Solana · via Rome." | Approve the wallet's prompt to add or switch the network. |
+| Borrowing or withdrawing with debt says "works with up to N collateral assets" | The app limits how many collateral assets can be switched on at once. Turn one off on the Dashboard, then try again. |
 
 ---
 
@@ -109,4 +110,8 @@ Multi-asset flash loans are not offered yet.
 
 The demo is a standalone Next.js app (`npm install --legacy-peer-deps`, `npm run build`, `npm start`; see the README for local development).
 
-App config (chain id, RPC, contract addresses) comes from the vendored registry files in `lib/` (`hadrian-chain.json`, `aave-hadrian.json`). Do not hardcode addresses elsewhere. Two environment variables point the same-origin proxies at other upstreams: `ROME_RPC_UPSTREAM` (the Rome RPC) and `SOLANA_RPC_UPSTREAM` (the Solana RPC; the default is the public Solana devnet RPC).
+App config (chain id, RPC, contract addresses) comes from the vendored registry files in `lib/` (`hadrian-chain.json`, `aave-hadrian.json`). Do not hardcode addresses elsewhere.
+
+**Token names and logos.** Logos come from `/api/token`, by mint: Jupiter's verified token list first, then the token's on-chain metadata; a token with neither shows a letter mark. With a Solana wallet connected, names come from the same source. Otherwise the app shows each reserve's symbol from `lib/aave-hadrian.json` and the token's on-chain name. This build has no registry source.
+
+Two environment variables point the same-origin proxies at other upstreams: `ROME_RPC_UPSTREAM` (the Rome RPC) and `SOLANA_RPC_UPSTREAM` (the Solana RPC; the default is the public Solana devnet RPC).

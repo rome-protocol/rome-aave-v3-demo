@@ -1,8 +1,8 @@
-Fonts in this folder, all under the SIL Open Font License, Version 1.1 (below):
+IBM Plex Mono, in this folder, is under the SIL Open Font License, Version 1.1 (below):
 
-  DM Sans     Copyright 2014 The DM Sans Project Authors (https://github.com/googlefonts/dm-fonts)
-  Literata    Copyright 2017 The Literata Project Authors (https://github.com/googlefonts/literata)
-  IBM Plex Mono  Copyright 2017 IBM Corp. (https://github.com/IBM/plex)
+  IBM Plex Mono  Copyright © 2017 IBM Corp. with Reserved Font Name "Plex" (https://github.com/IBM/plex)
+
+The Untitled Sans and Untitled Serif files in this folder are not under this license; see NOTICE.
 
 -----------------------------------------------------------
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007

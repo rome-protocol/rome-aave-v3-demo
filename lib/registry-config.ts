@@ -1,7 +1,6 @@
 // Registry config loader. For now reads from the vendored copies of
 // chains/<id-slug>/chain.json + apps/aave/<id-slug>.json. Once
-// @rome-protocol/registry v0.13.0 publishes, this swaps to
-// `import { getChain, getAaveDeployment } from "@rome-protocol/registry"`.
+// a registry package publishes this record, this swaps to a package import.
 
 import hadrian from "./aave-hadrian.json";
 import hadrianChainJson from "./hadrian-chain.json";
@@ -88,7 +87,7 @@ export interface AaveReserveEntry {
   aToken: string;
   variableDebtToken: string;
   priceFeed: string;
-  priceFeedKind: "pyth-pull" | "switchboard-v3" | "chainlink" | "mock-aggregator" | "price-book-shim";
+  priceFeedKind: "pyth-pull" | "switchboard-v3" | "chainlink" | "mock-aggregator" | "price-book-shim" | "price-book-entry-shim";
   decimals: number;
   ltv: number;
   liquidationThreshold: number;
@@ -105,6 +104,8 @@ export interface AaveDeployment {
   poolConfigurator: string;
   aclManager: string;
   oracle: string;
+  oracleKind?: "aave-oracle" | "rome-price-oracle";
+  aaveOracle?: string | null;
   poolDataProvider: string;
   treasury: string | null;
   uiPoolDataProviderV3: string | null;

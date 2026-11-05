@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 const ORACLE_ABI = parseAbi(["function getAssetPrice(address asset) view returns (uint256)"]);
+const PROVIDER_ABI = parseAbi(["function getPriceOracle() view returns (address)"]);
 
 export async function GET() {
   const chainId = DEFAULT_CHAIN_ID;
@@ -29,8 +30,15 @@ export async function GET() {
       console.error("[/api/status] block number", err instanceof Error ? err.message : String(err));
     }
     try {
+      // The pool's oracle is whatever the provider returns now: the market can switch oracle contracts
+      // (AaveOracle -> RomePriceOracle) without a config change, so the config's address is not trusted here.
+      const oracle = await client.readContract({
+        address: dep.addressesProvider as Address,
+        abi: PROVIDER_ABI,
+        functionName: "getPriceOracle",
+      });
       const price = await client.readContract({
-        address: dep.oracle as Address,
+        address: oracle,
         abi: ORACLE_ABI,
         functionName: "getAssetPrice",
         args: [dep.reserves[0].underlying as Address],

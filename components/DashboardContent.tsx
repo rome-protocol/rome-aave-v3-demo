@@ -113,6 +113,7 @@ export function DashboardContent() {
         reserve={modalReserve}
         position={modalPosition}
         aggregate={usr.data?.aggregate}
+        positions={usr.data?.positions}
         pool={aaveAddresses.pool as `0x${string}`}
         availableBorrowsUsd={usr.data?.aggregate.availableBorrowsUsd ?? 0}
         onClose={() => setActionIntent(null)}

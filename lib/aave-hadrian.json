@@ -7,7 +7,9 @@
   "pool": "0x81e7e7e4cBC2b5a55C2dE1d3dFCf87C0cF867520",
   "poolConfigurator": "0x1186549d0E2308579337ff064B2C5865F416d01F",
   "aclManager": "0x15Ef778f6399Ae984cc2A816afE76e30bd9e14D0",
-  "oracle": "0x4736549aB02e6c6b7083b7625464368E203287E4",
+  "oracle": "0x3ca9343F21661c1F854860532deeC2734bcD869B",
+  "oracleKind": "rome-price-oracle",
+  "aaveOracle": "0x4736549aB02e6c6b7083b7625464368E203287E4",
   "poolDataProvider": "0x79b627B56252468FD53d6F2d7C572Ea969dCC10D",
   "treasury": null,
   "uiPoolDataProviderV3": "0xd5C1348e15543A04e6A10303429F75d1ddeFD152",
@@ -26,7 +28,7 @@
       "aToken": "0x12e0E4bDb983EC3fA81ECb8EC226d6a37F7b3fA5",
       "variableDebtToken": "0x893500a6a3273E639A341036584d33F926519caa",
       "priceFeed": "0x4f4019C1b599561321a3916602bb4f2f98Fa419e",
-      "priceFeedKind": "price-book-shim",
+      "priceFeedKind": "price-book-entry-shim",
       "decimals": 6,
       "ltv": 7500,
       "liquidationThreshold": 8000,
@@ -39,7 +41,7 @@
       "aToken": "0x21B5602CdDAD66008e328F10Af5eB6563B065330",
       "variableDebtToken": "0x4cBEAA467e687CD9d4b73ac9Ec0dfC000A605B30",
       "priceFeed": "0x5E1c8E85a0b584C6a803bb99F5114e0B573D9c9a",
-      "priceFeedKind": "price-book-shim",
+      "priceFeedKind": "price-book-entry-shim",
       "decimals": 8,
       "ltv": 7000,
       "liquidationThreshold": 7500,
@@ -52,10 +54,23 @@
       "aToken": "0x9d9c3bf348Bf40fd35f6F9F0C46921e7Bd7e1ED0",
       "variableDebtToken": "0x485b8827E17c05Aa46C2E0F34388919e73DcAa86",
       "priceFeed": "0x3FDA08B8E2eD6179F16B8f69705A1b2bA51E0AF9",
-      "priceFeedKind": "price-book-shim",
+      "priceFeedKind": "price-book-entry-shim",
       "decimals": 9,
       "ltv": 6500,
       "liquidationThreshold": 7000,
+      "liquidationBonus": 10500
+    },
+    {
+      "symbol": "wBTC",
+      "displaySymbol": "BTC",
+      "underlying": "0x94834153ea70219d44edfe295697ff0c204ec68c",
+      "aToken": "0xEEc1D1335F5ca2BabEfbf98D10c2145147E42Db2",
+      "variableDebtToken": "0x67034C739c5dD5d26AF5279B8F50B6cD87e447A4",
+      "priceFeed": "0x2b7fE04fa357feC3837eE241fDc9Cea2Eb9470DB",
+      "priceFeedKind": "price-book-entry-shim",
+      "decimals": 9,
+      "ltv": 7000,
+      "liquidationThreshold": 7500,
       "liquidationBonus": 10500
     }
   ],
@@ -87,6 +102,6 @@
     "wrapper": "rome-solidity@8f5b5a7"
   },
   "status": "live",
-  "notes": "Aave V3.6 on Hadrian: 3 reserves (USDC, ETH, SOL) on the SPL-backed ERC-20 wrappers, priced from Rome's price book through one shim per asset. Redeployed 2026-09-19; the earlier market (Pool 0x54701445dD60E29152eD7B4d78e4091c7678c58C) is retired. Funding is through the Rome Bridge.",
+  "notes": "Aave V3.6 on Hadrian: 4 reserves (USDC, ETH, SOL, BTC) on the SPL-backed ERC-20 wrappers. The pool's price oracle reads Rome's price book directly, with a fixed fallback price per asset; each reserve's price feed is a small per-asset shim over the price book. Supply and borrow caps are read from the pool data provider. Redeployed 2026-09-19; the earlier market (Pool 0x54701445dD60E29152eD7B4d78e4091c7678c58C) is retired. Funding is through the Rome Bridge.",
   "walletBalanceProvider": "0xaEd052bE89183064598Ee15c2995a2eaD48ba047"
 }

@@ -110,6 +110,7 @@ export function AssetDetailContent({ symbol }: { symbol: string }) {
         reserve={reserve}
         position={userPosition}
         aggregate={usr.data?.aggregate}
+        positions={isConnected ? usr.data?.positions : undefined}
         pool={aaveAddresses.pool as `0x${string}`}
         availableBorrowsUsd={availableBorrowsUsd}
         onClose={() => setActionIntent(null)}

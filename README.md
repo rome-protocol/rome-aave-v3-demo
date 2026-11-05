@@ -23,9 +23,9 @@ Demo web app for canonical [Aave V3.6 on Rome](https://github.com/rome-protocol/
 
 ## Prices
 
-The three reserves (USDC, ETH, SOL) are priced from Rome's price book (the `*/USD-BOOK` feeds). `AaveOracle` reads each asset through one shim contract that wraps its book feed. If the book stalls, the shim answers with a fixed price that was set when the shim was deployed. `AaveOracle` itself has no fallback oracle. Prices follow the market while the book updates, and no price is hard-coded in this repo.
+The four reserves (USDC, ETH, SOL, BTC) are priced from Rome's price book. The pool reads one oracle contract, `RomePriceOracle`, which reads each asset's price book entry directly. If the book stalls, it answers with the price that was fixed when the oracle was deployed. Prices move with the market and no price is hard-coded in this repo.
 
-Read on 2026-11-05: USDC 0.9997, ETH 2,258, SOL 90.09 from `AaveOracle.getAssetPrice`.
+Read on 2026-11-05: USDC 0.9997, ETH 2,258, SOL 90.09 from `RomePriceOracle.getAssetPrice`, no fallback oracle set. BTC is priced the same way.
 
 ## Local dev
 
@@ -44,11 +44,12 @@ Hadrian (chain 200010, testnet):
 | `Pool` | `0x81e7e7e4cBC2b5a55C2dE1d3dFCf87C0cF867520` |
 | `PoolAddressesProvider` | `0x8f40D56ffAA473120177c65FC5EE431b22353CD4` |
 | `PoolConfigurator` | `0x1186549d0E2308579337ff064B2C5865F416d01F` |
-| `AaveOracle` | `0x4736549aB02e6c6b7083b7625464368E203287E4` |
+| `RomePriceOracle` (the pool's oracle) | `0x3ca9343F21661c1F854860532deeC2734bcD869B` |
+| `AaveOracle` (kept, no longer read by the pool) | `0x4736549aB02e6c6b7083b7625464368E203287E4` |
 | `AaveProtocolDataProvider` | `0x79b627B56252468FD53d6F2d7C572Ea969dCC10D` |
 | `UiPoolDataProviderV3` | `0xd5C1348e15543A04e6A10303429F75d1ddeFD152` |
 
-Reserves: USDC (6 decimals), ETH (8), SOL (9). Each is backed 1:1 by the asset on Solana. Liquidation bonus is 5%. The flash-loan premium is read from the pool (0 today). No e-mode categories are set.
+Reserves: USDC (6 decimals), ETH (8), SOL (9), BTC (9). Each is backed 1:1 by the asset on Solana. Liquidation bonus is 5%. The flash-loan premium is read from the pool (0 today). No e-mode categories are set.
 
 The app reads these addresses from `lib/aave-hadrian.json`; the code does not hardcode them. After a redeploy, update that file.
 
@@ -72,7 +73,7 @@ rome-aave-v3-demo/
 ├── utils/                 wallet detection, chain switch guard, session timeout, error handler
 ├── constants/             the single chain (Hadrian) definition
 ├── store/                 wallet, lane and theme stores
-└── public/                theme-init.js (paints the saved theme before the first frame), fonts, Rome logos
+└── public/                theme-init.js (paints the saved theme before the first frame), fonts (Untitled Sans and Untitled Serif, licensed to Rome Protocol, see NOTICE; IBM Plex Mono, SIL OFL), Rome logos
 ```
 
 ## Identity and lanes
@@ -112,18 +113,18 @@ wallet's brand.
 
 ## Vocabulary rule
 
-The display layer never says `wUSDC` / `wETH` / `cached` / `wrapper` / `SPL`. Tokens are surfaced by their underlying asset name (USDC, ETH, SOL) with the canonical logo. Solana backing is disclosed in exactly one place — the asset detail page's "About" disclosure.
+The display layer never says `wUSDC` / `wETH` / `cached` / `wrapper` / `SPL`. Reserves are labelled by their underlying asset symbol (USDC, ETH, SOL, BTC) from `lib/aave-hadrian.json`. Logos and Solana-wallet names come from `/api/token` (Jupiter's verified list, then on-chain metadata); a token with neither shows a letter mark. Solana backing is disclosed in exactly one place — the asset detail page's "About" disclosure.
 
 ## Parameterization rule
 
 No chain value or Aave address is written into components or hooks (the only fixed addresses are the Rome helper precompile and Multicall3). The code reads:
 - **The vendored files**: chain config from `lib/hadrian-chain.json`; contract addresses (Pool / PoolConfigurator / Oracle / etc.), reserves and the token list from `lib/aave-hadrian.json` (loaded by `lib/registry-config.ts`)
-- **Names and logos** on screen come from `/api/token`, in this order: Jupiter's verified list, then the token's on-chain metadata. This copy has no registry source.
-- **RPC at request time**: reserve data (APYs / utilization / total supply / borrow) via `UiPoolDataProviderV3.getReservesData`; user data via `getUserReservesData(user)`; per-asset price via `AaveOracle.getAssetPrice`
+- **Logos and names**: logos come from `/api/token`, by mint: Jupiter's verified list, then the token's on-chain metadata; a token with neither shows a letter mark. With a Solana wallet connected, names come from the same source. Otherwise the app shows each reserve's symbol from `lib/aave-hadrian.json` and the token's on-chain name. This copy has no registry source.
+- **RPC at request time**: reserve data (APYs / utilization / total supply / borrow) via `UiPoolDataProviderV3.getReservesData`; user data via `getUserReservesData(user)`; per-asset price via `RomePriceOracle.getAssetPrice` (the pool's live oracle, read from the addresses provider)
 
 ## License
 
-Licensed under Rome's license (personal, non-commercial use). See LICENSE and NOTICE.
+Licensed under Rome's license (personal, non-commercial use). See LICENSE and NOTICE. The Untitled Sans and Untitled Serif fonts in `public/fonts/` are licensed to Rome Protocol and are not covered by that license.
 
 ## Building on Rome with an agent
 

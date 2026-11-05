@@ -4,9 +4,14 @@
    aave-look.css. Layout stays with the components (inline sizes and padding); these rules carry the shape of each class and nothing the
    components already set. */
 
-/* Fonts, self-hosted from public/fonts: DM Sans and Literata (variable, SIL Open Font License) and IBM Plex Mono. */
-@font-face { font-family:'Literata'; font-style:normal; font-weight:200 900; src:url('/fonts/Literata-Variable.woff2') format('woff2'); font-display:swap; }
-@font-face { font-family:'DM Sans'; font-style:normal; font-weight:100 1000; src:url('/fonts/DMSans-Variable.woff2') format('woff2'); font-display:swap; }
+/* Brand fonts, self-hosted from public/fonts: Untitled Sans, Untitled Serif, IBM Plex Mono. */
+@font-face { font-family:'Untitled Serif'; font-style:normal; font-weight:400; src:url('/fonts/UntitledSerif-Regular.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Serif'; font-style:italic; font-weight:400; src:url('/fonts/UntitledSerif-RegularItalic.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Serif'; font-style:normal; font-weight:500; src:url('/fonts/UntitledSerif-Medium.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Sans'; font-style:normal; font-weight:300; src:url('/fonts/UntitledSans-Light.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Sans'; font-style:normal; font-weight:400; src:url('/fonts/UntitledSans-Regular.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Sans'; font-style:normal; font-weight:500; src:url('/fonts/UntitledSans-Medium.otf') format('opentype'); font-display:swap; }
+@font-face { font-family:'Untitled Sans'; font-style:normal; font-weight:700; src:url('/fonts/UntitledSans-Bold.otf') format('opentype'); font-display:swap; }
 @font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:400; src:url('/fonts/IBMPlexMono-Regular.ttf') format('truetype'); font-display:swap; }
 @font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:500; src:url('/fonts/IBMPlexMono-Medium.ttf') format('truetype'); font-display:swap; }
 @font-face { font-family:'IBM Plex Mono'; font-style:normal; font-weight:600; src:url('/fonts/IBMPlexMono-SemiBold.ttf') format('truetype'); font-display:swap; }
@@ -23,8 +28,8 @@
   --up:#21C08A; --up-dim:rgba(33,192,138,.14); --down:#F0616A; --down-dim:rgba(240,97,106,.14);
   --warn:#E8A33D;
 
-  --serif:"Literata",Georgia,serif;
-  --sans:"DM Sans",system-ui,-apple-system,"Helvetica Neue",sans-serif;
+  --serif:"Untitled Serif","Literata",Georgia,serif;
+  --sans:"Untitled Sans","DM Sans",system-ui,-apple-system,"Helvetica Neue",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,"SF Mono",Menlo,monospace;
   --ease:cubic-bezier(.2,.8,.2,1);
 }

@@ -16,8 +16,14 @@ Aave v3 (aave/aave-v3-origin) is licensed under the Business Source License 1.1
 Additional Use Grant, not by this repository's license.
 
 -------------------------------------------------------------------------------
-Third-party fonts
+Fonts
 -------------------------------------------------------------------------------
-This product bundles DM Sans, Literata and IBM Plex Mono, each licensed under
-the SIL Open Font License 1.1. The copyright lines and the license text are in
-public/fonts/OFL.txt.
+This product bundles two kinds of fonts.
+
+IBM Plex Mono is licensed under the SIL Open Font License 1.1. The copyright
+line and the license text are in public/fonts/OFL.txt.
+
+Untitled Sans and Untitled Serif (the UntitledSans-*.otf and UntitledSerif-*.otf
+files in public/fonts/) are licensed to Rome Protocol. They are not covered by
+this repository's license, and no right to use, copy or redistribute them is
+granted by it.
