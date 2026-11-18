@@ -27,6 +27,7 @@ import { useActiveLane } from "@/hooks/useActiveLane";
 import { useLaneSigner } from "@/hooks/useLaneSigner";
 import { sendSolanaLaneCall, waitForNonceAdvance, NeedsIterativeError } from "@/lib/solana/laneCall";
 import { sendRelayed } from "@/lib/solana/relay";
+import { expectReceiptFrom } from "@/lib/wait-for-receipt";
 import { authMessageFor } from "@/lib/solana/submit";
 import { ethRpc } from "@/lib/solana/proxy";
 import { encodeApproveSplGrant, SPL_WRAPPER_PROBE_ABI } from "@/lib/wrapperGrant";
@@ -78,7 +79,9 @@ export function useSendAaveCall(): SendAaveCall {
     const signer = laneSigner();
     const deps = { ...solanaDeps(), onSigned: hooks?.onSigned };
     try {
-      return (await sendSolanaLaneCall(call, signer, deps)).evmTxHash;
+      const r = await sendSolanaLaneCall(call, signer, deps);
+      expectReceiptFrom(r.evmTxHash, r.synthetic, r.txIds);
+      return r.evmTxHash;
     } catch (e) {
       if (!(e instanceof NeedsIterativeError)) throw e;
       // The auth signature from the atomic attempt covers the same body — reuse it, never prompt twice.
@@ -87,6 +90,7 @@ export function useSendAaveCall(): SendAaveCall {
       const r = await sendRelayed(e.rlp, signer, { ...deps, onPhase: hooks?.onPhase }, authSig);
       // the relay returns after the legs land; the EVM view may still lag a moment
       await waitForNonceAdvance(deps.proxyUrl, e.synthetic, before - 1n);
+      expectReceiptFrom(r.evmTxHash, e.synthetic, r.txIds);
       relayed.current.add(r.evmTxHash.toLowerCase());
       return r.evmTxHash;
     }

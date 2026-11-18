@@ -8,6 +8,7 @@ import { buildUnsignedEip1559Rlp } from "./unsignedTx";
 import { keypairLaneSigner } from "./keypairSigner";
 import { splitV1Wire } from "./v1Message";
 import { sendSignedPlan, PlanSigningRefused } from "./plan";
+import { evmTxHashOf, txIdsFor } from "./submit";
 
 const ROME_PROGRAM = new PublicKey("RPTWwELXAY4KC9ZPHhaxp7Sq1hHtU3HNEgLbSegCcWf");
 const kp = Keypair.generate(); const signer = keypairLaneSigner(kp);
@@ -89,5 +90,33 @@ describe("sendSignedPlan — the direct path for a call that cannot be atomic", 
       eth_getTransactionCount: () => "0x3", getBlockHeight: () => 10, getTransaction: () => ({ meta: { logMessages: ["Program log: boom"] } }),
     });
     await expect(sendSignedPlan(RLP, new Uint8Array(64), batchSigner, deps(bad.f))).rejects.toThrow(/did not complete.*boom/s);
+  });
+});
+
+describe("sendSignedPlan — compose evmTxHash", () => {
+  const run = async (evmTxHash: unknown) => {
+    let nonce = 3n; let signed = false;
+    const rpc = fakeRpc({
+      rome_composeUnsignedIterativeV1: () => ({ recentBlockhash: "x", transactions: [legFor(kp.publicKey, 1)], ...(evmTxHash === undefined ? {} : { evmTxHash }) }),
+      getLatestBlockhash: () => ({ value: { blockhash: "x", lastValidBlockHeight: 1000 } }),
+      sendTransaction: () => { nonce = 4n; return "sig1"; },
+      getSignatureStatuses: () => ({ value: [{ err: null, confirmationStatus: "confirmed" }] }),
+      getBlockHeight: () => 10,
+      eth_getTransactionCount: () => `0x${nonce.toString(16)}`,
+    });
+    const batchSigner = { ...signer, signV1Wires: async (wires: Uint8Array[]) => { signed = true; return Promise.all(wires.map((w) => signer.signV1Wire(w))); } };
+    const r = await sendSignedPlan(RLP, new Uint8Array(64), batchSigner, deps(rpc.f)).catch((e) => e);
+    return { r, signed };
+  };
+  it("uses the new id when the proxy sends it, the old one when it does not", async () => {
+    const ids = txIdsFor(RLP, kp.publicKey);
+    expect((await run(ids[1])).r.evmTxHash).toBe(ids[1]);
+    expect((await run(undefined)).r.evmTxHash).toBe(evmTxHashOf(RLP));
+    expect((await run(null)).r.evmTxHash).toBe(evmTxHashOf(RLP));
+  });
+  it("refuses an id that is neither, before the wallet signs", async () => {
+    const { r, signed } = await run(`0x${"22".repeat(32)}`);
+    expect(r).toBeInstanceOf(Error);
+    expect(signed).toBe(false);
   });
 });

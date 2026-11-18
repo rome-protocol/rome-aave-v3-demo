@@ -7,7 +7,7 @@ import type { Hex } from "viem";
 import fixture from "./__fixtures__/composed-v1-fixture.json";
 import { buildUnsignedEip1559Rlp } from "./unsignedTx";
 import { ensureSyntheticGas, maxGasCostWei, sendRelayed } from "./relay";
-import { authMessageFor, evmTxHashOf } from "./submit";
+import { authMessageFor, evmTxHashOf, evmTxIdFor, authHashFor } from "./submit";
 import { keypairLaneSigner } from "./keypairSigner";
 import { splitV1Wire } from "./v1Message";
 
@@ -87,6 +87,22 @@ describe("sendRelayed", () => {
     expect(r.evmTxHash).toBe(evmTxHashOf(RLP));
     expect(r.depositSignature).toBeNull();
     expect(seen).toEqual(["relaying"]);
+  });
+  it("accepts the sender-bound id and returns it (the one to poll)", async () => {
+    const newId = evmTxIdFor(authHashFor(RLP), kp.publicKey);
+    const rpc = fakeRpc({ eth_getBalance: () => "0x" + (10n ** 19n).toString(16), rome_relayUnsignedV1: () => newId });
+    const r = await sendRelayed(RLP, signer, deps(rpc.f));
+    expect(r.evmTxHash).toBe(newId);
+    expect(r.txIds).toEqual([evmTxHashOf(RLP), newId]);
+  });
+  it("accepts the old id and returns it", async () => {
+    const rpc = fakeRpc({ eth_getBalance: () => "0x" + (10n ** 19n).toString(16), rome_relayUnsignedV1: () => evmTxHashOf(RLP) });
+    expect((await sendRelayed(RLP, signer, deps(rpc.f))).evmTxHash).toBe(evmTxHashOf(RLP));
+  });
+  it("refuses another wallet's id for the same payload", async () => {
+    const other = evmTxIdFor(authHashFor(RLP), Keypair.generate().publicKey);
+    const rpc = fakeRpc({ eth_getBalance: () => "0x" + (10n ** 19n).toString(16), rome_relayUnsignedV1: () => other });
+    await expect(sendRelayed(RLP, signer, deps(rpc.f))).rejects.toThrow(/different transaction/);
   });
   it("refuses when the proxy echoes a different hash", async () => {
     const rpc = fakeRpc({ eth_getBalance: () => "0x" + (10n ** 19n).toString(16), rome_relayUnsignedV1: () => "0x" + "11".repeat(32) });

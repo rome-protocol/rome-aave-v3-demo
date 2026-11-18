@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { waitForReceiptWithTimeout, TxReceiptTimeoutError, requireSuccess, confirmTx, TxRevertedError, TxNotConfirmedError } from "./wait-for-receipt";
+import { waitForReceiptWithTimeout, TxReceiptTimeoutError, requireSuccess, confirmTx, TxRevertedError, TxNotConfirmedError, expectReceiptFrom } from "./wait-for-receipt";
 
 describe("requireSuccess", () => {
   const h = "0x01" as const;
@@ -104,5 +104,32 @@ describe("confirmTx", () => {
 
   it("checks a relayed hash's receipt", async () => {
     await expect(confirmTx(client("reverted"), hash, true)).rejects.toBeInstanceOf(TxRevertedError);
+  });
+});
+
+describe("receipts of a Solana-wallet send", () => {
+  const ME = "0xAbCd000000000000000000000000000000000001";
+  const OLD = `0x${"aa".repeat(32)}` as const;
+  const NEW = `0x${"bb".repeat(32)}` as const;
+  const make = (receipt: Record<string, unknown>) => ({ waitForTransactionReceipt: async () => receipt, getTransactionReceipt: async () => receipt }) as any;
+
+  it("takes a receipt from the wallet's synthetic sender under either id", async () => {
+    expectReceiptFrom(NEW, ME, [OLD, NEW]);
+    await expect(requireSuccess(make({ status: "success", from: ME.toLowerCase(), transactionHash: NEW }), NEW)).resolves.toBeUndefined();
+    await expect(requireSuccess(make({ status: "success", from: ME, transactionHash: OLD.toUpperCase().replace("0X", "0x") }), NEW, true)).resolves.toBeUndefined();
+  });
+  it("refuses another sender's receipt, relayed or not", async () => {
+    const other = make({ status: "success", from: "0x0000000000000000000000000000000000000002", transactionHash: NEW });
+    expectReceiptFrom(NEW, ME, [OLD, NEW]);
+    await expect(requireSuccess(other, NEW)).rejects.toBeInstanceOf(TxNotConfirmedError);
+    await expect(requireSuccess(other, NEW, true, { pollMs: 1, timeoutMs: 5 })).rejects.toBeInstanceOf(TxNotConfirmedError);
+  });
+  it("refuses a receipt with an id that is not one of the two, or with no sender", async () => {
+    expectReceiptFrom(NEW, ME, [OLD, NEW]);
+    await expect(requireSuccess(make({ status: "success", from: ME, transactionHash: `0x${"cc".repeat(32)}` }), NEW)).rejects.toBeInstanceOf(TxNotConfirmedError);
+    await expect(requireSuccess(make({ status: "success" }), NEW)).rejects.toBeInstanceOf(TxNotConfirmedError);
+  });
+  it("does not constrain a hash nobody registered (the EVM lane)", async () => {
+    await expect(requireSuccess(make({ status: "success" }), `0x${"dd".repeat(32)}`)).resolves.toBeUndefined();
   });
 });
