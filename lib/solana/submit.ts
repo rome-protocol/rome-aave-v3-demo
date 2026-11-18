@@ -3,7 +3,7 @@
 // version 1. Address lookup tables and legacy transactions are not used.
 import { Buffer } from "buffer";
 import { PublicKey } from "@solana/web3.js";
-import { concatHex, keccak256, type Hex } from "viem";
+import { concatHex, hexToBytes, keccak256, type Hex } from "viem";
 import type { LaneSigner } from "@/lib/lane/walletStandard";
 import { ATOMIC_REQUIRES_ITERATIVE, composeUnsignedAtomicV1, jsonRpc, type FetchLike } from "./proxy";
 
@@ -34,9 +34,47 @@ export function isAuthMessage(bytes: Uint8Array): boolean {
   const text = Buffer.from(bytes).toString("utf8");
   return text.startsWith(AUTH_MESSAGE_PREFIX) && /^[0-9a-f]{64}$/.test(text.slice(AUTH_MESSAGE_PREFIX.length));
 }
-/** The EVM transaction hash the proxy and explorer will show for this send — the same bytes as the auth hash. */
+/** The EVM transaction hash a chain that still uses the authorization hash as the id shows for this send — the same bytes as the auth hash. */
 export function evmTxHashOf(unsignedRlp: Hex): Hex {
   return keccak256(concatHex(["0x02", unsignedRlp]));
+}
+
+/** Domain tag of the sender-bound transaction id (16 ASCII bytes). */
+export const TX_ID_TAG = "RomeSolanaV1TxId";
+
+/**
+ * The sender-bound transaction id of a Solana-wallet call:
+ * keccak256(TX_ID_TAG ‖ signingHash ‖ ed25519 pubkey), 16 + 32 + 32 bytes.
+ * `signingHash` is `authHashFor(rlp)`; two wallets sending the same payload get different ids.
+ */
+export function evmTxIdFor(signingHash: Hex | Uint8Array, pubkey: PublicKey | Uint8Array): Hex {
+  const hash = typeof signingHash === "string" ? hexToBytes(signingHash) : signingHash;
+  const key = pubkey instanceof PublicKey ? pubkey.toBytes() : pubkey;
+  if (hash.length !== 32) throw new Error(`signingHash must be 32 bytes (got ${hash.length})`);
+  if (key.length !== 32) throw new Error(`pubkey must be 32 bytes (got ${key.length})`);
+  const input = new Uint8Array(80);
+  input.set(new TextEncoder().encode(TX_ID_TAG), 0);
+  input.set(hash, 16);
+  input.set(key, 48);
+  return keccak256(input);
+}
+
+/** The two ids the proxy may report for this send: the authorization hash, or the id bound to this wallet. */
+export type TxIds = readonly [Hex, Hex];
+export function txIdsFor(unsignedRlp: Hex, payer: PublicKey): TxIds {
+  return [evmTxHashOf(unsignedRlp), evmTxIdFor(authHashFor(unsignedRlp), payer)];
+}
+export function isOneOfTxIds(hash: string, ids: TxIds): boolean {
+  return ids.some((id) => id.toLowerCase() === hash.toLowerCase());
+}
+/**
+ * The id to poll for: what the proxy answered when it answered (it must be one of ours,
+ * else the answer is for another call), otherwise the authorization hash.
+ */
+export function pickTxId(answered: string | null | undefined, ids: TxIds, method: string): Hex {
+  if (answered == null) return ids[0];
+  if (!isOneOfTxIds(answered, ids)) throw new Error(`${method}: the proxy answered evmTxHash ${answered}, expected ${ids[0]} or ${ids[1]}.`);
+  return answered as Hex;
 }
 
 export interface SolanaRpcDeps {
@@ -55,6 +93,8 @@ export interface AtomicSendDeps extends SolanaRpcDeps {
 export interface AtomicSendResult {
   signature: string;
   evmTxHash: Hex;
+  /** The two ids this send may be reported under; a receipt must carry one of them. */
+  txIds: TxIds;
   computeUnitsConsumed: number | null;
   wireBytes: number;
   accounts: number;
@@ -104,6 +144,10 @@ export async function submitAtomicV1(unsignedRlp: Hex, signer: LaneSigner, deps:
     throw e;
   }
 
+  // Before the wallet is asked to sign: an id that is neither of ours means the answer is for another call.
+  const txIds = txIdsFor(unsignedRlp, signer.payer);
+  const evmTxHash = pickTxId(plan.evmTxHash, txIds, "rome_composeUnsignedAtomicV1");
+
   const wire = new Uint8Array(Buffer.from(plan.transaction, "base64"));
   const { message, numRequiredSignatures } = splitV1Wire(wire);
   if (numRequiredSignatures !== 1) throw new Error(`The composed transaction needs ${numRequiredSignatures} signatures; this lane signs for one payer only.`);
@@ -129,7 +173,8 @@ export async function submitAtomicV1(unsignedRlp: Hex, signer: LaneSigner, deps:
   }
   return {
     signature,
-    evmTxHash: evmTxHashOf(unsignedRlp),
+    evmTxHash,
+    txIds,
     computeUnitsConsumed: meta?.computeUnitsConsumed ?? null,
     wireBytes: wire.length,
     accounts: romeAccounts.length,

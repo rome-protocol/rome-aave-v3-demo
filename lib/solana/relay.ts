@@ -9,7 +9,7 @@ import { parseTransaction, type Hex } from "viem";
 import type { LaneSigner } from "@/lib/lane/walletStandard";
 import { syntheticAddress } from "@/lib/lane/identity";
 import { composeExternalDepositV1, ethRpc, jsonRpc, relayUnsignedV1, type FetchLike } from "./proxy";
-import { authMessageFor, evmTxHashOf, getTransactionMetaRaw, pollConfirmation, type AtomicSendDeps } from "./submit";
+import { authMessageFor, isOneOfTxIds, getTransactionMetaRaw, pollConfirmation, txIdsFor, type AtomicSendDeps, type TxIds } from "./submit";
 import { parseV1Message, splitV1Wire } from "./v1Message";
 
 /** Worst-case wei the relayed execution can charge the synthetic: gasLimit × maxFeePerGas of the body. */
@@ -67,7 +67,8 @@ export async function ensureSyntheticGas(neededWei: bigint, signer: LaneSigner, 
   throw new Error(`The deposit confirmed (${signature}) but the balance has not been credited yet; try again in a moment.`);
 }
 
-export interface RelayResult { evmTxHash: Hex; depositSignature: string | null }
+/** `evmTxHash` is the id the proxy returned (the one to poll); `txIds` are the two ids a receipt may carry. */
+export interface RelayResult { evmTxHash: Hex; txIds: TxIds; depositSignature: string | null }
 
 /** Relay `unsignedRlp` through the proxy: one auth prompt (plus the deposit, when the synthetic cannot pay). */
 export async function sendRelayed(unsignedRlp: Hex, signer: LaneSigner, deps: RelayDeps, authSigGiven?: Uint8Array): Promise<RelayResult> {
@@ -77,7 +78,8 @@ export async function sendRelayed(unsignedRlp: Hex, signer: LaneSigner, deps: Re
   const authSig = authSigGiven ?? await signer.signAuthMessage(authMessageFor(unsignedRlp));
   if (!authSigGiven) deps.onSigned?.("auth");
   const returned = await relayUnsignedV1(deps.proxyUrl, unsignedRlp, signer.payer, authSig, f);
-  const expected = evmTxHashOf(unsignedRlp);
-  if (returned.toLowerCase() !== expected.toLowerCase()) throw new Error(`The proxy relayed a different transaction (${returned}) than the one signed (${expected}).`);
-  return { evmTxHash: expected, depositSignature };
+  // Either id of the signed payload is fine: the authorization hash, or the id bound to this wallet.
+  const txIds = txIdsFor(unsignedRlp, signer.payer);
+  if (!isOneOfTxIds(returned, txIds)) throw new Error(`The proxy relayed a different transaction (${returned}) than the one signed (${txIds[0]} or ${txIds[1]}).`);
+  return { evmTxHash: returned, txIds, depositSignature };
 }

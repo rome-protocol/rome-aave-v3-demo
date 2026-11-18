@@ -7,7 +7,7 @@ import { decodeFunctionData, type Hex } from "viem";
 import fixture from "./__fixtures__/composed-v1-fixture.json";
 import { buildUnsignedEip1559Rlp } from "./unsignedTx";
 import { accountsForProgram, parseV1Message, splitV1Wire } from "./v1Message";
-import { authHashFor, authMessageFor, AUTH_MESSAGE_PREFIX, evmTxHashOf, submitAtomicV1 } from "./submit";
+import { authHashFor, authMessageFor, AUTH_MESSAGE_PREFIX, evmTxHashOf, evmTxIdFor, txIdsFor, TX_ID_TAG, submitAtomicV1 } from "./submit";
 import { keypairLaneSigner } from "./keypairSigner";
 import { buildLaneRlp, NeedsIterativeError, sendSolanaLaneCall } from "./laneCall";
 import { ATOMIC_REQUIRES_ITERATIVE } from "./proxy";
@@ -63,6 +63,28 @@ describe("auth message (what the wallet is asked to sign)", () => {
   });
   it("doubles as the EVM tx hash", () => {
     expect(evmTxHashOf(RLP)).toBe(`0x${Buffer.from(authHashFor(RLP)).toString("hex")}`);
+  });
+});
+
+describe("sender-bound transaction id", () => {
+  const SIGNING = `0x${"11".repeat(32)}` as Hex;
+  const PUBKEY = new Uint8Array(32).fill(0x22);
+  // Shared with the TypeScript SDK's test: keccak256("RomeSolanaV1TxId" || 32 x 0x11 || 32 x 0x22), computed independently.
+  const VECTOR = "0x058941a9f39cf113eb00c09c504e88080690a27d80243508e5c9227a257db3a7";
+  it("matches the shared test vector", () => {
+    expect(TX_ID_TAG).toBe("RomeSolanaV1TxId");
+    expect(Buffer.from(TX_ID_TAG)).toHaveLength(16);
+    expect(evmTxIdFor(SIGNING, PUBKEY)).toBe(VECTOR);
+    expect(evmTxIdFor(new Uint8Array(32).fill(0x11), new PublicKey(PUBKEY))).toBe(VECTOR);
+  });
+  it("differs per wallet and per payload, and rejects inputs that are not 32 bytes", () => {
+    expect(evmTxIdFor(SIGNING, new Uint8Array(32).fill(0x23))).not.toBe(VECTOR);
+    expect(evmTxIdFor(`0x${"12".repeat(32)}`, PUBKEY)).not.toBe(VECTOR);
+    expect(() => evmTxIdFor("0x1234", PUBKEY)).toThrow(/signingHash must be 32 bytes/);
+    expect(() => evmTxIdFor(SIGNING, new Uint8Array(31))).toThrow(/pubkey must be 32 bytes/);
+  });
+  it("txIdsFor is [authorization hash, id bound to the wallet]", () => {
+    expect(txIdsFor(RLP, PAYER)).toEqual([evmTxHashOf(RLP), evmTxIdFor(authHashFor(RLP), PAYER)]);
   });
 });
 
@@ -170,6 +192,43 @@ describe("sendSolanaLaneCall", () => {
     expect(r.evmTxHash).toBe(evmTxHashOf(r.rlp));
     expect(rpc.calls.map((c) => c.method)).toContain("rome_composeUnsignedAtomicV1");
     expect(rpc.calls.some((c) => c.method === "sendTransaction")).toBe(true);
+  });
+
+  describe("compose evmTxHash", () => {
+    const rlp = () => buildUnsignedEip1559Rlp({ chainId: 200010, nonce: 5, maxPriorityFeePerGas: 1n, maxFeePerGas: 1n, gasLimit: 100_000n, to: call.to, value: 0n, data: call.data });
+    const run = async (evmTxHash: unknown) => {
+      let txSigned = false;
+      const rpc = fakeRpc({
+        rome_composeUnsignedAtomicV1: () => ({ recentBlockhash: "x", transaction: Buffer.from(wireFor(kp.publicKey)).toString("base64"), ...(evmTxHash === undefined ? {} : { evmTxHash }) }),
+        getLatestBlockhash: () => ({ value: { blockhash: "x", lastValidBlockHeight: 1000 } }),
+        sendTransaction: () => "5igSig1",
+        getSignatureStatuses: () => ({ value: [{ err: null, confirmationStatus: "confirmed" }] }),
+        getTransaction: () => ({ meta: { computeUnitsConsumed: 1, logMessages: [] } }),
+      });
+      const r = await submitAtomicV1(rlp(), { ...signer, signV1Wire: async (w) => { txSigned = true; return signer.signV1Wire(w); } }, { proxyUrl: "p", solanaRpcUrl: "s", programId: ROME_PROGRAM, fetchImpl: rpc.f, pollMs: 1 }).catch((e) => e);
+      return { r, txSigned };
+    };
+    it("uses the new id when the proxy sends it", async () => {
+      const ids = txIdsFor(rlp(), kp.publicKey);
+      const { r } = await run(ids[1]);
+      expect(r.evmTxHash).toBe(ids[1]);
+      expect(r.txIds).toEqual(ids);
+    });
+    it("accepts the old id, in any case", async () => {
+      const { r } = await run(evmTxHashOf(rlp()).toUpperCase().replace("0X", "0x"));
+      expect(r.evmTxHash).toMatch(/^0x[0-9a-fA-F]{64}$/);
+      expect(r.evmTxHash.toLowerCase()).toBe(evmTxHashOf(rlp()));
+    });
+    it("falls back to the old id when the field is absent or null", async () => {
+      expect((await run(undefined)).r.evmTxHash).toBe(evmTxHashOf(rlp()));
+      expect((await run(null)).r.evmTxHash).toBe(evmTxHashOf(rlp()));
+    });
+    it("refuses an id that is neither, before the wallet signs the transaction", async () => {
+      const { r, txSigned } = await run(`0x${"11".repeat(32)}`);
+      expect(r).toBeInstanceOf(Error);
+      expect((r as Error).message).toMatch(/expected 0x[0-9a-f]{64} or 0x[0-9a-f]{64}/);
+      expect(txSigned).toBe(false);
+    });
   });
 
   it("refuses to sign a composed wire whose fee payer is not the wallet", async () => {

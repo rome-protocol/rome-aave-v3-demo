@@ -76,6 +76,23 @@ export class TxNotConfirmedError extends Error {
   }
 }
 
+// A Solana-wallet send is reported under one of two ids (the authorization hash or the id bound to the
+// wallet), and two wallets can send the same payload. So the lane registers who sent a hash and which ids
+// are its own; a receipt for such a hash counts only when it is from that sender and carries one of them.
+const expectedReceipt = new Map<string, { from: string; ids: readonly string[] }>();
+
+export function expectReceiptFrom(hash: Hash, from: string, ids: readonly string[]): void {
+  expectedReceipt.set(hash.toLowerCase(), { from: from.toLowerCase(), ids: ids.map((i) => i.toLowerCase()) });
+}
+
+function isOwnReceipt(hash: Hash, receipt: unknown): boolean {
+  const want = expectedReceipt.get(hash.toLowerCase());
+  if (!want) return true;
+  const r = receipt as { from?: unknown; transactionHash?: unknown } | null;
+  return typeof r?.from === "string" && r.from.toLowerCase() === want.from
+    && typeof r.transactionHash === "string" && want.ids.includes(r.transactionHash.toLowerCase());
+}
+
 type StatusClient = ReceiptClient & { getTransactionReceipt: (args: { hash: Hash }) => Promise<unknown> };
 
 /**
@@ -93,6 +110,7 @@ export async function requireSuccess(
   let receipt: { status?: string } | null = null;
   if (!relayed) {
     receipt = (await waitForReceiptWithTimeout(client, hash)) as { status?: string };
+    if (!isOwnReceipt(hash, receipt)) throw new TxNotConfirmedError(hash, opts.linkInMessage);
   } else {
     const { pollMs = RELAYED_POLL_MS, timeoutMs = RELAYED_TIMEOUT_MS, linkInMessage } = opts;
     const deadline = Date.now() + timeoutMs;
@@ -102,6 +120,7 @@ export async function requireSuccess(
       } catch {
         receipt = null; // not served yet
       }
+      if (receipt && !isOwnReceipt(hash, receipt)) receipt = null; // another sender's receipt is not ours
       if (receipt) break;
       if (Date.now() + pollMs > deadline) throw new TxNotConfirmedError(hash, linkInMessage);
       await new Promise((r) => setTimeout(r, pollMs));

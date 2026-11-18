@@ -11,7 +11,7 @@ import type { Hex } from "viem";
 import type { LaneSigner } from "@/lib/lane/walletStandard";
 import { syntheticAddress } from "@/lib/lane/identity";
 import { composeUnsignedIterativeV1, jsonRpc } from "./proxy";
-import { evmTxHashOf, getTransactionMetaRaw, type AtomicSendDeps } from "./submit";
+import { getTransactionMetaRaw, pickTxId, txIdsFor, type AtomicSendDeps, type TxIds } from "./submit";
 import { accountsForProgram, parseV1Message, splitV1Wire } from "./v1Message";
 
 /** The wallet would not (or could not) sign the batch: the caller may take the relayed path instead. */
@@ -25,11 +25,14 @@ export interface PlanDeps extends AtomicSendDeps {
   onLegLanded?: (index: number, total: number, signature: string) => void;
 }
 
-export interface PlanResult { evmTxHash: Hex; legs: number; signatures: string[]; /** legs the network refused at send (tolerated when the session completed). */ legErrors: string[] }
+export interface PlanResult { evmTxHash: Hex; txIds: TxIds; legs: number; signatures: string[]; /** legs the network refused at send (tolerated when the session completed). */ legErrors: string[] }
 
 export async function sendSignedPlan(unsignedRlp: Hex, authSig: Uint8Array, signer: LaneSigner, deps: PlanDeps): Promise<PlanResult> {
   const f = deps.fetchImpl ?? fetch;
   const plan = await composeUnsignedIterativeV1(deps.proxyUrl, unsignedRlp, signer.payer, authSig, f);
+  // Before the wallet is asked to sign: an id that is neither of ours means the answer is for another call.
+  const txIds = txIdsFor(unsignedRlp, signer.payer);
+  const evmTxHash = pickTxId(plan.evmTxHash, txIds, "rome_composeUnsignedIterativeV1");
   const wires = plan.transactions.map((t) => new Uint8Array(Buffer.from(t, "base64")));
   if (wires.length === 0) throw new Error("The proxy composed an empty plan.");
   // Validate every leg before the wallet sees any of them.
@@ -91,5 +94,5 @@ export async function sendSignedPlan(unsignedRlp: Hex, authSig: Uint8Array, sign
     }
     await new Promise((r) => setTimeout(r, pollMs));
   }
-  return { evmTxHash: evmTxHashOf(unsignedRlp), legs: signed.length, signatures, legErrors };
+  return { evmTxHash, txIds, legs: signed.length, signatures, legErrors };
 }

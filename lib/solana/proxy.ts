@@ -26,8 +26,9 @@ export async function jsonRpc<T>(url: string, method: string, params: unknown[],
   return json.result;
 }
 
-export interface AtomicUnsignedV1Plan { recentBlockhash: string; transaction: string }
-export interface UnsignedV1Plan { recentBlockhash: string; transactions: string[] }
+/** `evmTxHash`, when the proxy sends one, is the id the call will be reported under: the authorization hash or the sender-bound id. */
+export interface AtomicUnsignedV1Plan { recentBlockhash: string; transaction: string; evmTxHash?: Hex | null }
+export interface UnsignedV1Plan { recentBlockhash: string; transactions: string[]; evmTxHash?: Hex | null }
 
 export const ATOMIC_REQUIRES_ITERATIVE = "external atomic plan requires iterative composition";
 
@@ -40,7 +41,7 @@ export function composeUnsignedIterativeV1(proxyUrl: string, rlp: Hex, payer: Pu
 export function submitSignedV1Plan(proxyUrl: string, payer: PublicKey, signedWiresBase64: string[], f?: FetchLike) {
   return jsonRpc<string[]>(proxyUrl, "rome_submitSignedV1Plan", [payer.toBase58(), signedWiresBase64], f);
 }
-/** Proxy payer runs the (possibly iterative) execution; the synthetic pays EVM gas from its native balance. Returns the EVM tx hash. */
+/** Proxy payer runs the (possibly iterative) execution; the synthetic pays EVM gas from its native balance. Returns the EVM tx id (the authorization hash or the sender-bound id). */
 export function relayUnsignedV1(proxyUrl: string, rlp: Hex, payer: PublicKey, authSig: Uint8Array, f?: FetchLike) {
   return jsonRpc<Hex>(proxyUrl, "rome_relayUnsignedV1", [rlp, payer.toBase58(), base58.encode(authSig)], f);
 }
